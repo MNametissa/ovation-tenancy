@@ -207,6 +207,11 @@ describe('assertRoleIsSafe', () => {
     // autre.
     const NAME = 'guard_spec_runtime';
     const PWD = 'guard_spec_pwd_2026';
+    // `drop role` échoue tant que le rôle détient des privilèges : il faut
+    // révoquer d'abord. Sans ce nettoyage, un test qui échoue laisse le rôle
+    // derrière lui et fait échouer tous les suivants.
+    await sql.raw(`revoke all on schema public from ${NAME}`).execute(admin).catch(() => {});
+    await sql.raw(`drop owned by ${NAME}`).execute(admin).catch(() => {});
     await sql.raw(`drop role if exists ${NAME}`).execute(admin).catch(() => {});
     await sql
       .raw(`create role ${NAME} login password '${PWD}' nobypassrls nosuperuser`)
@@ -221,7 +226,12 @@ describe('assertRoleIsSafe', () => {
       expect(errors).toHaveLength(0);
     } finally {
       await runtime.destroy();
-      await sql.raw(`drop role if exists ${NAME}`).execute(admin).catch(() => {});
+      // `drop role` échoue tant que le rôle détient des privilèges : il faut
+    // révoquer d'abord. Sans ce nettoyage, un test qui échoue laisse le rôle
+    // derrière lui et fait échouer tous les suivants.
+    await sql.raw(`revoke all on schema public from ${NAME}`).execute(admin).catch(() => {});
+    await sql.raw(`drop owned by ${NAME}`).execute(admin).catch(() => {});
+    await sql.raw(`drop role if exists ${NAME}`).execute(admin).catch(() => {});
     }
   });
 });

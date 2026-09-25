@@ -43,5 +43,10 @@
     "rxjs": "^7.8.2",
     "ts-jest": "^29.4.14",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
+  },
+  "dependencies": {
+    "@nestjs-cls/transactional": "^4.0.1",
+    "@nestjs-cls/transactional-adapter-kysely": "^2.0.1",
+    "nestjs-cls": "^7.0.1"
   }
 }

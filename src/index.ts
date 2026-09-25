@@ -25,3 +25,10 @@ export {
 export type { RoleCredentials } from './migrations/001-roles.js';
 
 export { auditRls, assertRlsIsSound, type RlsAudit } from './rls/guards.js';
+
+export {
+  TenantContext,
+  CLS_TENANT,
+  CLS_USER,
+  type TenantScope,
+} from './context/tenant-context.js';

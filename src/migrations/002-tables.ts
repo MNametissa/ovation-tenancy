@@ -130,6 +130,24 @@ export async function up(db: Kysely<any>): Promise<void> {
             on permission (domaine) where obsolete_le is null`.execute(db);
   await sql`create index if not exists journal_tenant_date_idx
             on journal_audit (tenant_id, horodatage desc)`.execute(db);
+
+  // DÉCOUVERT À L'EXÉCUTION : `ALTER DEFAULT PRIVILEGES` ne vaut QUE pour les
+  // tables créées APRÈS son exécution. Or les tables ci-dessus sont créées
+  // dans la même transaction que la migration 001 qui pose ces défauts —
+  // `app_runtime` se retrouvait sans aucun privilège, et toutes ses requêtes
+  // échouaient sur « permission denied for table … ».
+  //
+  // Les privilèges sont donc accordés EXPLICITEMENT ici. Le journal d'audit
+  // reçoit SELECT et INSERT seulement : UPDATE et DELETE lui sont refusés au
+  // niveau des privilèges, en plus des règles DO INSTEAD NOTHING.
+  await sql`
+    grant select, insert, update, delete on
+      tenant, utilisateur, permission, role, role_permission, appartenance
+    to app_runtime
+  `.execute(db);
+  await sql`grant select, insert on journal_audit to app_runtime`.execute(db);
+  await sql`grant usage, select on all sequences in schema public to app_runtime`
+    .execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
