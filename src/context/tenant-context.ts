@@ -117,7 +117,11 @@ export class TenantContext {
    * laisser chercher.
    */
   assertInTransaction(operation = 'requête'): void {
-    if (!this.txHost.isTransactionActive) {
+    // `isTransactionActive()` est une MÉTHODE, pas un accesseur. Sans les
+    // parenthèses, la condition portait sur la fonction elle-même — toujours
+    // vraie — et ce garde n'avertissait JAMAIS. Un garde muet est pire que
+    // pas de garde : il donne l'illusion d'une protection.
+    if (!this.txHost.isTransactionActive()) {
       this.logger?.warn(MSG.noTransaction(operation));
     }
   }

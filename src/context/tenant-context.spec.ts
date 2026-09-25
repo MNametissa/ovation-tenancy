@@ -5,14 +5,32 @@
  * moyen d'attraper une fuite de variable de session, et elle n'apparaît
  * jamais en test séquentiel naïf.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
+import { Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ClsModule, ClsService } from 'nestjs-cls';
+import { ClsPluginTransactional } from '@nestjs-cls/transactional';
+import { TransactionalAdapterKysely } from '@nestjs-cls/transactional-adapter-kysely';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 import { runMigrations } from '../migrations/runner.js';
-import { CLS_TENANT, CLS_USER } from './tenant-context.js';
-import { MSG, type TenancyLogger } from '../logging.js';
+import { CLS_TENANT, CLS_USER, TenantContext } from './tenant-context.js';
+import { MSG, TENANCY_LOGGER, type TenancyLogger } from '../logging.js';
+
+/** Jeton du Kysely fourni à l'adaptateur transactionnel. */
+const KYSELY = Symbol('KYSELY');
+
+/**
+ * Module exportant le Kysely, pour le plugin transactionnel.
+ *
+ * `useFactory` et non `useValue` : `runtime` n'est assigné qu'en `beforeAll`,
+ * donc la valeur doit être lue au moment de l'instanciation.
+ */
+@Module({
+  providers: [{ provide: KYSELY, useFactory: () => runtime }],
+  exports: [KYSELY],
+})
+class DbModule {}
 
 const { Pool, Client } = pg;
 const DB = 'tenancy_ctx_test';
@@ -238,5 +256,193 @@ describe('CLS — propagation du contexte', () => {
     const cls = moduleRef.get(ClsService);
     expect(cls.isActive()).toBe(false);
     await moduleRef.close();
+  });
+});
+
+/**
+ * La CLASSE TenantContext, montée comme une application le fera.
+ *
+ * Les tests ci-dessus prouvent le comportement de PostgreSQL et du CLS, mais
+ * en posant `set_config` à la main. Ils ne touchaient donc jamais le code que
+ * l'application appelle réellement — `applyToTransaction`, `withContext`,
+ * `assertInTransaction`. Une garantie mesurée sur la base n'est pas une
+ * garantie mesurée sur le code qui l'utilise.
+ */
+describe('TenantContext — la classe', () => {
+  let moduleRef: Awaited<ReturnType<ReturnType<typeof Test.createTestingModule>['compile']>>;
+  let ctx: TenantContext;
+  let logs: ReturnType<typeof mkLogger>;
+
+  beforeEach(async () => {
+    logs = mkLogger();
+    moduleRef = await Test.createTestingModule({
+      imports: [
+        ClsModule.forRoot({
+          global: true,
+          middleware: { mount: false },
+          plugins: [
+            new ClsPluginTransactional({
+              // Le plugin est un module isolé : le jeton doit lui être fourni
+              // par son propre `imports`, pas depuis le module de test.
+              imports: [DbModule],
+              adapter: new TransactionalAdapterKysely({ kyselyInstanceToken: KYSELY }),
+            }),
+          ],
+        }),
+      ],
+      providers: [
+        { provide: TENANCY_LOGGER, useValue: logs.logger },
+        TenantContext,
+      ],
+    }).compile();
+    await moduleRef.init();
+    ctx = moduleRef.get(TenantContext);
+  });
+
+  afterEach(async () => {
+    await moduleRef.close();
+  });
+
+  it('withContext pose le contexte : le tenant se voit lui-même', async () => {
+    const rows = await ctx.run({ tenantId: T_A, userId: U_1 }, () =>
+      ctx.withContext((trx) => trx.selectFrom('tenant').select(['id']).execute()),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(T_A);
+  });
+
+  it('withContext isole : deux tenants successifs, même connexion', async () => {
+    for (const t of [T_A, T_B, T_A, T_B]) {
+      const rows = await ctx.run({ tenantId: t, userId: U_1 }, () =>
+        ctx.withContext((trx) => trx.selectFrom('tenant').select(['id']).execute()),
+      );
+      expect(rows.map((r: any) => r.id)).toEqual([t]);
+    }
+  });
+
+  it('run expose tenantId et userId ; hors run ils sont undefined', async () => {
+    expect(ctx.tenantId).toBeUndefined();
+    expect(ctx.userId).toBeUndefined();
+
+    await ctx.run({ tenantId: T_A, userId: U_1 }, async () => {
+      expect(ctx.tenantId).toBe(T_A);
+      expect(ctx.userId).toBe(U_1);
+    });
+
+    // Le contexte ne survit pas à la sortie du run.
+    expect(ctx.tenantId).toBeUndefined();
+  });
+
+  it('run sans userId : tenantId posé, userId absent', async () => {
+    await ctx.run({ tenantId: T_A }, async () => {
+      expect(ctx.tenantId).toBe(T_A);
+      expect(ctx.userId).toBeUndefined();
+    });
+  });
+
+  it('SANS tenant : 0 ligne, et le développeur est AVERTI avec l’action', async () => {
+    // L'échec fermé protège la donnée ; l'avertissement évite la chasse au
+    // bug. Les deux sont exigés.
+    const rows = await ctx.withContext((trx) =>
+      trx.selectFrom('tenant').select(['id']).execute(),
+    );
+    expect(rows).toHaveLength(0);
+    expect(logs.warns.some((w) => w.includes('TenantContext.run'))).toBe(true);
+    expect(logs.warns.some((w) => w.includes('AUCUNE ligne'))).toBe(true);
+  });
+
+  it('tenant SANS utilisateur : contexte posé, mais averti sur app.user', async () => {
+    const rows = await ctx.run({ tenantId: T_A }, () =>
+      ctx.withContext((trx) => trx.selectFrom('tenant').select(['id']).execute()),
+    );
+    // Le tenant est bien posé : la lecture fonctionne.
+    expect(rows).toHaveLength(1);
+    // Mais l'isolation intra-tenant ne s'appliquera pas, et ça doit se savoir.
+    expect(logs.warns.some((w) => w.includes('app.user'))).toBe(true);
+  });
+
+  it('applyToTransaction nomme l’opération dans l’avertissement', async () => {
+    await runtime.transaction().execute(async (trx) => {
+      await ctx.applyToTransaction(trx, 'publierEvenement');
+    });
+    expect(logs.warns.some((w) => w.includes('publierEvenement'))).toBe(true);
+  });
+
+  it('applyToTransaction trace le contexte posé en debug, tronqué', async () => {
+    await ctx.run({ tenantId: T_A, userId: U_1 }, () =>
+      ctx.withContext(async () => {}),
+    );
+    const d = logs.debugs.find((m) => m.includes('Contexte posé'));
+    expect(d).toBeDefined();
+    // L'identifiant est tronqué : un log ne doit pas porter l'UUID entier.
+    expect(d).toContain(T_A.slice(0, 8));
+    expect(d).not.toContain(T_A);
+  });
+
+  it('assertInTransaction avertit hors transaction, se taît dedans', async () => {
+    ctx.assertInTransaction('listTenants');
+    expect(logs.warns.some((w) => w.includes('@Transactional'))).toBe(true);
+
+    const avant = logs.warns.length;
+    await ctx.run({ tenantId: T_A, userId: U_1 }, () =>
+      ctx.withContext(async () => {
+        ctx.assertInTransaction('listTenants');
+      }),
+    );
+    expect(logs.warns.length).toBe(avant);
+  });
+
+  it('RÉGRESSION : isTransactionActive est une MÉTHODE, pas un accesseur', () => {
+    // Le défaut trouvé : `if (!this.txHost.isTransactionActive)` teste la
+    // fonction elle-même — toujours vraie — donc le garde n'avertissait
+    // jamais. Un garde muet donne l'illusion d'une protection.
+    //
+    // On verrouille la forme, pas seulement le comportement : si une
+    // bibliothèque future en faisait un accesseur booléen, ce test le dirait
+    // avant que le garde ne redevienne muet en silence.
+    const th: any = (ctx as any).txHost;
+    expect(typeof th.isTransactionActive).toBe('function');
+    expect(th.isTransactionActive()).toBe(false);
+  });
+
+  it('withContext propage l’erreur ET annule la transaction', async () => {
+    await expect(
+      ctx.run({ tenantId: T_A, userId: U_1 }, () =>
+        ctx.withContext(async () => {
+          throw new Error('échec métier');
+        }),
+      ),
+    ).rejects.toThrow('échec métier');
+
+    // La connexion reste utilisable : pas de transaction restée ouverte.
+    const rows = await ctx.run({ tenantId: T_A, userId: U_1 }, () =>
+      ctx.withContext((trx) => trx.selectFrom('tenant').select(['id']).execute()),
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('le contexte ne fuit pas APRÈS withContext, sur la même connexion', async () => {
+    await ctx.run({ tenantId: T_A, userId: U_1 }, () =>
+      ctx.withContext(async () => {}),
+    );
+    const residu = await sql<{ v: string }>`
+      select coalesce(current_setting('app.tenant', true), '') as v
+    `.execute(runtime);
+    expect(residu.rows[0].v).toBe('');
+  });
+
+  it('deux run concurrents ne se mélangent pas jusqu’au SQL', async () => {
+    // Le vrai régime d'un serveur. Pool max=1 : les transactions sont
+    // sérialisées, mais chaque run doit retrouver SON tenant.
+    const [a, b] = await Promise.all([
+      ctx.run({ tenantId: T_A, userId: U_1 }, () =>
+        ctx.withContext((trx) => trx.selectFrom('tenant').select(['id']).execute()),
+      ),
+      ctx.run({ tenantId: T_B, userId: U_1 }, () =>
+        ctx.withContext((trx) => trx.selectFrom('tenant').select(['id']).execute()),
+      ),
+    ]);
+    expect(a.map((r: any) => r.id)).toEqual([T_A]);
+    expect(b.map((r: any) => r.id)).toEqual([T_B]);
   });
 });
