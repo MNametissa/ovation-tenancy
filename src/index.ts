@@ -32,3 +32,10 @@ export {
   CLS_USER,
   type TenantScope,
 } from './context/tenant-context.js';
+
+export {
+  RoleService,
+  SYSTEM_ROLES,
+  type Role,
+  type RoleInput,
+} from './roles/role-service.js';
