@@ -87,6 +87,24 @@ dans `assertCan()` et couvert par un test.
 | 3 | Une erreur PostgreSQL **avorte la transaction entière** | un `catch` applicatif inopérant, toutes les requêtes suivantes en échec |
 | 4 | Les paramètres liés ne traversent pas un bloc `DO $$` | migration des rôles impossible |
 | 5 | **Hors transaction, `FORCE` reste désactivé** après un échec | table exposée à son propriétaire, sans aucun signal |
+| 6 | `ensureSystemRoles()` **levait** si le catalogue hôte n'avait pas `audit.read` | **aucune application tierce ne démarrait** — le catalogue appartient à l'hôte, pas à la bibliothèque |
+| 7 | `isTransactionActive` est une **méthode**, testée comme un accesseur | `assertInTransaction()` n'avertissait **JAMAIS** — un garde muet qui donne l'illusion d'une protection |
+
+Le défaut 7 est le plus instructif : `if (!this.txHost.isTransactionActive)` teste
+la fonction elle-même, donc toujours vraie. Le garde était **mort depuis son
+écriture**, et aucun test ne le voyait parce que `TenantContext` n'était jamais
+instanciée — les tests posaient `set_config` à la main.
+
+> Une garantie mesurée sur PostgreSQL n'est pas une garantie mesurée sur le code
+> qui l'utilise.
+
+Corrigé, plus un test qui verrouille la **forme** (`typeof … === 'function'`) et
+pas seulement le comportement.
+
+Le défaut 6 n'était visible qu'en installant les deux paquets **depuis leurs
+tarballs** : les suites unitaires importent le source et fabriquent leur propre
+catalogue, donc la dépendance au catalogue de l'hôte leur est invisible. D'où
+`integration/` — 11 vérifications dans une application NestJS 12 neuve.
 
 ### Ce qui n'est PAS couvert — surfaces restantes
 
@@ -98,6 +116,7 @@ dans `assertCan()` et couvert par un test.
 | **Limitation de débit** | rien | 4 |
 | **CSRF avec front séparé** | rien | 4/5 |
 | **Injection** | requêtes paramétrées partout (Kysely), non audité | 4 |
+| **Intégration des deux paquets** | couverte — `integration/`, 11/11 depuis tarballs | fait |
 | **Sauvegardes et restauration testée** | rien | avant production |
 | **Exposition de données** | T4.8 — le défaut exact des deux concurrents | 4 |
 
@@ -130,7 +149,41 @@ Aucun n'affecte le socle. Tous bloquent le paiement.
 
 ---
 
-## 4. Dettes assumées
+## 4. Couverture — ce que l'audit a révélé
+
+La suite annonçait vert à 95 tests. Un vert ne prouve rien sans son périmètre :
+en mesurant la couverture fichier par fichier, **87,84 %** au total cachait
+des zones mortes sur les pièces les plus sensibles.
+
+| Fichier | Avant | Après | Ce qui n'était pas exécuté |
+|---|---|---|---|
+| `tenant-context.ts` | **13,33 %** | **100 %** | la classe entière — `applyToTransaction`, `withContext`, `assertInTransaction` |
+| `logging.ts` | 62,5 % | **100 %** | `createLogger`, seul chemin d'une application réelle |
+| `audit-service.ts` | 86,95 % | **100 %** | `list()`, que servira l'écran « Journal d'audit » |
+| `guards.ts` | 88,52 % | 96,72 % | `assertRlsIsSound` face à un `WITH CHECK` manquant et à une unicité globale |
+| `001-roles.ts` | 74,28 % | 80 % | la validation de mot de passe — seule barrière d'un `CREATE ROLE` |
+| **Total** | **87,84 %** | **97,22 %** (lignes 98,58 %, **fonctions 100 %**) | |
+
+Tests : **95 → 131**, déclarés = exécutés à chaque mesure.
+
+### Ce que ça a coûté de ne pas mesurer plus tôt
+
+Le défaut 7 vivait précisément dans les 86,67 % non couverts de
+`tenant-context.ts`. Le fichier qui pose `app.tenant` et `app.user` — le point
+dont dépend TOUTE l'isolation — était couvert à 13 %, alors que les tests
+« d'isolation » passaient tous : ils prouvaient le comportement de PostgreSQL en
+posant `set_config` à la main, jamais celui du code appelé par l'application.
+
+### Non couvert, et assumé
+
+| Zone | Pourquoi |
+|---|---|
+| `001-roles.ts` 125-131 — chemin `create role` | les rôles sont globaux au cluster et créés par le `globalSetup` ; ce chemin est inatteignable en test, c'est la contrepartie du 19 s → 7,5 s |
+| Branches d'erreur de courses concurrentes | déclenchables seulement par une vraie course entre deux migrations |
+
+---
+
+## 5. Dettes assumées
 
 | Dette | Raison | Quand |
 |---|---|---|
@@ -138,3 +191,5 @@ Aucun n'affecte le socle. Tous bloquent le paiement.
 | `policies` métier (silence pendant la délibération) non implémentées | elles appartiennent à l'application, pas à la bibliothèque | T4.5 |
 | Pas de fabrique `definePolicies` déclarative | le SQL direct suffit tant qu'il n'y a qu'un consommateur | quand un second apparaîtra |
 | `scopedResource` non paramétrable | `appartenance.portee_ressource_id` est sans clé étrangère, donc déjà générique | si besoin |
+| `assertInTransaction()` **avertit** au lieu de lever | lever romprait une application qui lit hors transaction volontairement ; l'échec fermé protège déjà la donnée | à revoir si l'avertissement est ignoré |
+| Le banc d'intégration n'est pas encore dans une CI | aucune CI n'est configurée sur le dépôt | phase 4 |
