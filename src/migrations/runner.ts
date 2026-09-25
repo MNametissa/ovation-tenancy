@@ -29,12 +29,23 @@ export interface Migration {
     logger?: TenancyLogger,
   ): Promise<void>;
   down(db: Kysely<any>, logger?: TenancyLogger): Promise<void>;
+  /**
+   * Exécuter hors transaction.
+   *
+   * Réservé aux migrations qui doivent SURVIVRE à une erreur rattrapée : une
+   * erreur PostgreSQL avorte la transaction entière, donc un `catch`
+   * applicatif y est inopérant. Ne l'utiliser que si rien ne peut rester à
+   * moitié appliqué de façon dangereuse.
+   */
+  outsideTransaction?: boolean;
 }
 
 /** Migrations exportées EN TABLEAU, pas en glob : un glob casse selon pnpm,
  *  le hoisting et le monorepo. */
 export const MIGRATIONS: Migration[] = [
-  { name: '001-roles', up: m001.up, down: m001.down },
+  // Hors transaction : tolère les courses sur les rôles, qui sont globaux au
+  // cluster. Ne touche ni aux tables ni à FORCE RLS.
+  { name: '001-roles', up: m001.up, down: m001.down, outsideTransaction: true },
   { name: '002-tables', up: (db) => m002.up(db), down: (db) => m002.down(db) },
   { name: '003-functions', up: (db) => m003.up(db), down: (db) => m003.down(db) },
   { name: '004-rls', up: (db) => m004.up(db), down: (db) => m004.down(db) },
@@ -99,18 +110,38 @@ export async function runMigrations(
 
     logger?.log(`Application de la migration « ${migration.name} »`);
     try {
-      await db.transaction().execute(async (trx) => {
-        await migration.up(trx, credentials, logger);
+      if (migration.outsideTransaction) {
+        // DÉCOUVERT À L'EXÉCUTION : une erreur PostgreSQL AVORTE la
+        // transaction entière — un `catch` applicatif ne suffit pas, toute
+        // requête suivante échoue sur « current transaction is aborted ».
+        //
+        // La migration des rôles doit donc tourner HORS transaction : elle
+        // tolère les courses (deux migrations concurrentes créant les mêmes
+        // rôles globaux au cluster), ce qui exige de pouvoir continuer après
+        // une erreur rattrapée.
+        //
+        // Sans risque ici : elle ne touche ni aux tables ni à FORCE RLS, donc
+        // rien ne peut rester à moitié appliqué de façon dangereuse.
+        await migration.up(db, credentials, logger);
         await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`
-          .execute(trx);
-      });
+          .execute(db);
+      } else {
+        await db.transaction().execute(async (trx) => {
+          await migration.up(trx, credentials, logger);
+          await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`
+            .execute(trx);
+        });
+      }
       applied.push(migration.name);
     } catch (e) {
       logger?.error(
         `Migration « ${migration.name} » ÉCHOUÉE : ${(e as Error).message}. ` +
-          `Elle a été annulée par ROLLBACK — la base reste dans l'état ` +
-          `précédent, et FORCE ROW LEVEL SECURITY est rétabli. ` +
-          `Corrigez la migration avant de relancer.`,
+          (migration.outsideTransaction
+            ? `Elle s'exécute HORS transaction : vérifiez son effet partiel ` +
+              `avant de relancer.`
+            : `Elle a été annulée par ROLLBACK — la base reste dans l'état ` +
+              `précédent, et FORCE ROW LEVEL SECURITY est rétabli.`) +
+          ` Corrigez la migration avant de relancer.`,
         (e as Error).stack,
       );
       throw e;

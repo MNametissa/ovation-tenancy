@@ -98,13 +98,32 @@ export async function up(
       // réaligne donc mot de passe ET options, sinon l'application ne peut
       // plus se connecter — panne d'authentification très difficile à
       // rattacher à sa cause.
-      await sql.raw(`alter role ${r.name} ${r.options}${pwd}`).execute(db);
-      logger?.debug(`Rôle « ${r.name} » déjà présent — mot de passe et options réalignés`);
+      //
+      // `tuple concurrently updated` peut survenir si deux migrations
+      // réalignent le même rôle en même temps. L'état visé étant identique,
+      // l'erreur est inoffensive : on la signale sans échouer.
+      try {
+        await sql.raw(`alter role ${r.name} ${r.options}${pwd}`).execute(db);
+        logger?.debug(`Rôle « ${r.name} » déjà présent — mot de passe et options réalignés`);
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (!msg.includes('concurrently updated')) throw e;
+        logger?.debug(
+          `Rôle « ${r.name} » réaligné en parallèle par une autre migration — ` +
+            `état visé identique, sans conséquence`,
+        );
+      }
       continue;
     }
 
-    await sql.raw(`create role ${r.name} ${r.options}${pwd}`).execute(db);
-    logger?.log(`Rôle « ${r.name} » créé`);
+    try {
+      await sql.raw(`create role ${r.name} ${r.options}${pwd}`).execute(db);
+      logger?.log(`Rôle « ${r.name} » créé`);
+    } catch (e) {
+      // Course entre deux migrations : l'autre a gagné, le rôle existe.
+      if (!(e as Error).message.includes('already exists')) throw e;
+      logger?.debug(`Rôle « ${r.name} » créé entretemps par une autre migration`);
+    }
   }
 
   // PostgreSQL 15+ a retiré CREATE au rôle PUBLIC sur le schéma public.

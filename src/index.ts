@@ -39,3 +39,16 @@ export {
   type Role,
   type RoleInput,
 } from './roles/role-service.js';
+
+export {
+  PermissionSink,
+  type DiscoveredPermission,
+  type DiscoveredCatalog,
+  type SyncReport,
+} from './permissions/permission-sink.js';
+
+export {
+  AuditService,
+  type AuditEntry,
+  type ChainVerification,
+} from './audit/audit-service.js';
