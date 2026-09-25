@@ -131,6 +131,47 @@ describe('T3.6 — rôles système', () => {
     expect(r.rows.map((x) => x.code)).toEqual(['jure', 'organisateur']);
   });
 
+  it('RÉGRESSION : un rôle système tolère une permission absente du catalogue', async () => {
+    // TROUVÉ EN INTÉGRATION : `observateur` déclare `audit.read`, mais le
+    // catalogue dépend de l'application hôte. La version stricte faisait
+    // PLANTER ensureSystemRoles() au démarrage de toute application n'exposant
+    // pas cette route.
+    await sql`alter table role no force row level security`.execute(admin);
+    await sql`alter table role_permission no force row level security`.execute(admin);
+    await sql`delete from role_permission`.execute(admin);
+    await sql`delete from role`.execute(admin);
+    await sql`delete from permission`.execute(admin);
+    // Catalogue volontairement incomplet : pas d'audit.read.
+    await sql`insert into permission (code, libelle, domaine)
+              values ('event.read.all', 'Lire', 'evenement')`.execute(admin);
+
+    const warns: string[] = [];
+    const svc = new RoleService(admin, {
+      error: () => {}, warn: (m) => warns.push(m), log: () => {}, debug: () => {},
+    });
+
+    // Ne doit PAS lever.
+    const created = await svc.ensureSystemRoles();
+    expect(created).toHaveLength(SYSTEM_ROLES.length);
+
+    // Mais doit AVERTIR, avec l'action corrective.
+    expect(warns.some((w) => w.includes('audit.read'))).toBe(true);
+    expect(warns.some((w) => w.includes('ajoutez le garde'))).toBe(true);
+
+    await sql`alter table role force row level security`.execute(admin);
+    await sql`alter table role_permission force row level security`.execute(admin);
+  });
+
+  it('en revanche un rôle de TENANT refuse une permission inconnue', async () => {
+    // Saisie humaine : une permission inconnue y est une erreur, pas un
+    // décalage de version.
+    await expect(
+      roles.createTenantRole(T_A, {
+        code: 'strict', libelle: 'Strict', permissions: ['jamais.vue'],
+      }),
+    ).rejects.toThrow(/inconnue\(s\) du catalogue/);
+  });
+
   it('refuse de supprimer un rôle système, et explique pourquoi', async () => {
     await expect(roles.deleteTenantRole(T_A, 'jure')).rejects.toThrow(
       /rôle système .* ne peut pas être supprimé/,

@@ -115,7 +115,18 @@ export class RoleService {
       `.execute(this.db);
 
       const roleId = ins.rows[0].id;
-      await this.attachPermissions(roleId, r.permissions);
+      // TOLÉRANT pour les rôles système : ils sont livrés avec la
+      // bibliothèque, alors que le catalogue dépend de l'application hôte.
+      // Un rôle `observateur` qui déclare `audit.read` ne doit pas empêcher
+      // le démarrage d'une application qui n'expose pas encore cette route.
+      //
+      // DÉCOUVERT EN INTÉGRATION : la version stricte faisait planter
+      // `ensureSystemRoles()` au démarrage de toute application dont le
+      // catalogue ne contenait pas exactement les permissions attendues.
+      //
+      // Pour un rôle créé par un TENANT, la règle reste stricte : c'est une
+      // saisie humaine, une permission inconnue y est une erreur.
+      await this.attachPermissions(roleId, r.permissions, { tolerateUnknown: true });
       created.push(r.code);
       this.logger?.log(`Rôle système « ${r.code} » créé`);
     }
@@ -164,7 +175,11 @@ export class RoleService {
    * que le code sait faire respecter, et cocher une case qui ne protège rien
    * donne un faux sentiment de sécurité.
    */
-  async attachPermissions(roleId: string, codes: string[]): Promise<void> {
+  async attachPermissions(
+    roleId: string,
+    codes: string[],
+    opts: { tolerateUnknown?: boolean } = {},
+  ): Promise<void> {
     if (codes.length === 0) return;
 
     // Le joker '*' du rôle propriétaire : toutes les permissions du catalogue.
@@ -186,11 +201,25 @@ export class RoleService {
     const unknown = effective.filter((c) => !known.has(c));
 
     if (unknown.length > 0) {
-      throw new Error(
-        `Permission(s) inconnue(s) du catalogue : ${unknown.join(', ')}. ` +
-          `Le catalogue décrit ce que le CODE sait faire respecter — une ` +
-          `permission qui n'y figure pas ne protège rien. Vérifiez qu'un ` +
-          `garde l'applique, puis relancez la découverte.`,
+      const explication =
+        `Le catalogue décrit ce que le CODE sait faire respecter — une ` +
+        `permission qui n'y figure pas ne protège rien.`;
+
+      if (!opts.tolerateUnknown) {
+        throw new Error(
+          `Permission(s) inconnue(s) du catalogue : ${unknown.join(', ')}. ` +
+            `${explication} Vérifiez qu'un garde l'applique, puis relancez ` +
+            `la découverte.`,
+        );
+      }
+
+      // Rôle système : on continue, mais le développeur DOIT savoir que ces
+      // permissions sont déclarées sans être appliquées par du code.
+      this.logger?.warn(
+        `Rôle système : permission(s) absente(s) du catalogue ignorée(s) — ` +
+          `${unknown.join(', ')}. ${explication} Le rôle est créé sans ` +
+          `elles. Si votre application doit les appliquer, ajoutez le garde ` +
+          `correspondant puis relancez la découverte et ce service.`,
       );
     }
 
