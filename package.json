@@ -45,6 +45,7 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "dependencies": {
+    "@casl/ability": "^7.0.1",
     "@nestjs-cls/transactional": "^4.0.1",
     "@nestjs-cls/transactional-adapter-kysely": "^2.0.1",
     "nestjs-cls": "^7.0.1"

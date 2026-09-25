@@ -52,3 +52,12 @@ export {
   type AuditEntry,
   type ChainVerification,
 } from './audit/audit-service.js';
+
+export {
+  buildAbility,
+  loadAbilityContext,
+  assertCan,
+  ForbiddenError,
+  type AppAbility,
+  type AbilityContext,
+} from './authorization/ability.js';
