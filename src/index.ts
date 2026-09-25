@@ -12,3 +12,14 @@ export {
   assertRoleIsSafe,
   type RlsGuardOptions,
 } from './migrations/rls-guard.js';
+
+export {
+  runMigrations,
+  rollbackMigrations,
+  MIGRATIONS,
+  type Migration,
+  type RunOptions,
+  type MigrationResult,
+} from './migrations/runner.js';
+
+export type { RoleCredentials } from './migrations/001-roles.js';
