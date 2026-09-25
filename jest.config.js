@@ -2,6 +2,12 @@
 export default {
   testEnvironment: 'node',
   rootDir: 'src',
+  // Les rôles PostgreSQL sont GLOBAUX AU CLUSTER, pas à la base. Deux suites
+  // parallèles qui migrent sur deux bases différentes se disputent le même
+  // ALTER ROLE et produisent « tuple concurrently updated » — un verrou
+  // consultatif n'y suffit pas, il est lui aussi propre à une base.
+  // Ces suites touchent une ressource globale : elles tournent en série.
+  maxWorkers: 1,
   testRegex: '\\.spec\\.ts$',
   extensionsToTreatAsEsm: ['.ts'],
   // NestJS 12 is ESM-only ("type": "module", no CJS build), so the test runner

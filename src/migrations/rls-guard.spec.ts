@@ -201,7 +201,19 @@ describe('assertRoleIsSafe', () => {
   });
 
   it('accepte un rôle applicatif bridé', async () => {
-    const runtime = mkDb('app_runtime', 'runtime');
+    // Rôle dédié à CE test : les rôles sont globaux au cluster, et
+    // `app_runtime` voit son mot de passe réaligné par les migrations des
+    // autres suites. Un test ne doit pas dépendre de l'état laissé par un
+    // autre.
+    const NAME = 'guard_spec_runtime';
+    const PWD = 'guard_spec_pwd_2026';
+    await sql.raw(`drop role if exists ${NAME}`).execute(admin).catch(() => {});
+    await sql
+      .raw(`create role ${NAME} login password '${PWD}' nobypassrls nosuperuser`)
+      .execute(admin);
+    await sql.raw(`grant usage on schema public to ${NAME}`).execute(admin);
+
+    const runtime = mkDb(NAME, PWD);
     try {
       const { logger, errors } = mkLogger();
       const safe = await assertRoleIsSafe(runtime, logger);
@@ -209,6 +221,7 @@ describe('assertRoleIsSafe', () => {
       expect(errors).toHaveLength(0);
     } finally {
       await runtime.destroy();
+      await sql.raw(`drop role if exists ${NAME}`).execute(admin).catch(() => {});
     }
   });
 });

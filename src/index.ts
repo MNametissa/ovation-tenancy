@@ -23,3 +23,5 @@ export {
 } from './migrations/runner.js';
 
 export type { RoleCredentials } from './migrations/001-roles.js';
+
+export { auditRls, assertRlsIsSound, type RlsAudit } from './rls/guards.js';

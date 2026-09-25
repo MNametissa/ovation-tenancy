@@ -52,11 +52,24 @@ async function roleExists(db: Kysely<any>, name: string): Promise<boolean> {
   return r.rows[0].n > 0;
 }
 
+/**
+ * Identifiant du verrou consultatif protégeant la création des rôles.
+ *
+ * DÉCOUVERT À L'EXÉCUTION : les rôles PostgreSQL sont GLOBAUX AU CLUSTER, pas
+ * à la base. Deux migrations concurrentes — deux bases, deux instances, deux
+ * suites de tests — produisent `tuple concurrently updated` sur le même
+ * `ALTER ROLE`. Un verrou consultatif sérialise cette section.
+ */
+const ROLE_LOCK_ID = 847_100_001;
+
 export async function up(
   db: Kysely<any>,
   credentials: RoleCredentials,
   logger?: TenancyLogger,
 ): Promise<void> {
+  // Verrou tenu jusqu'à la fin de la transaction de migration.
+  await sql`select pg_advisory_xact_lock(${ROLE_LOCK_ID})`.execute(db);
+
   const plan: Array<{ name: string; password?: string; options: string }> = [
     { name: 'app_migration', password: credentials.migration, options: 'login' },
     {
@@ -75,13 +88,21 @@ export async function up(
   for (const r of plan) {
     if (r.password !== undefined) assertSafePassword(r.name, r.password);
 
-    if (await roleExists(db, r.name)) {
-      logger?.debug(`Rôle « ${r.name} » déjà présent`);
-      continue;
-    }
     // Les identifiants et mots de passe ne peuvent pas être des paramètres
     // liés dans un CREATE ROLE : on interpole après validation stricte.
     const pwd = r.password !== undefined ? ` password '${r.password}'` : '';
+
+    if (await roleExists(db, r.name)) {
+      // Les rôles PostgreSQL sont globaux au cluster, pas à la base : un rôle
+      // créé pour une autre base subsiste avec son ancien mot de passe. On
+      // réaligne donc mot de passe ET options, sinon l'application ne peut
+      // plus se connecter — panne d'authentification très difficile à
+      // rattacher à sa cause.
+      await sql.raw(`alter role ${r.name} ${r.options}${pwd}`).execute(db);
+      logger?.debug(`Rôle « ${r.name} » déjà présent — mot de passe et options réalignés`);
+      continue;
+    }
+
     await sql.raw(`create role ${r.name} ${r.options}${pwd}`).execute(db);
     logger?.log(`Rôle « ${r.name} » créé`);
   }
