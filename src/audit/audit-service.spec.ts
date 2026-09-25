@@ -235,6 +235,104 @@ describe('T3.8 — journal d’audit', () => {
     expect(v.valid).toBe(true);
     expect(v.checked).toBe(0);
   });
+
+  /**
+   * `list()` est ce que servira l'écran « Journal d'audit ».
+   *
+   * Elle n'était pas couverte : la méthode publique que verra un utilisateur
+   * final était la seule du service à n'avoir jamais été exécutée.
+   */
+  describe('list — lecture du journal', () => {
+    const T_C = '33333333-3333-3333-3333-333333333333';
+    const EV_1 = 'eeee1111-0000-0000-0000-000000000001';
+    const EV_2 = 'eeee2222-0000-0000-0000-000000000002';
+
+    async function seed() {
+      const audit = new AuditService(admin);
+      // Deux évènements du tenant A, plus une entrée d'un AUTRE tenant.
+      await sql`alter table tenant no force row level security`.execute(admin);
+      await sql`insert into tenant (id, slug, nom, pays)
+                values (${T_C}, 'c', 'Tenant C', 'CM')`.execute(admin);
+      await sql`alter table tenant force row level security`.execute(admin);
+
+      for (let i = 0; i < 3; i++) {
+        await audit.record({
+          tenantId: T_A, ressourceId: EV_1, acteurId: U_1,
+          acteurRole: 'organisateur', action: `event.update.${i}`,
+          cibleType: 'evenement',
+        });
+      }
+      await audit.record({
+        tenantId: T_A, ressourceId: EV_2, acteurId: U_1,
+        acteurRole: 'organisateur', action: 'event.create',
+        cibleType: 'evenement',
+      });
+      await audit.record({
+        tenantId: T_C, acteurRole: 'proprietaire',
+        action: 'tenant.create', cibleType: 'tenant',
+      });
+      return audit;
+    }
+
+    it('ne rend que les entrées du tenant demandé', async () => {
+      const audit = await seed();
+      const rows = (await audit.list(T_A)) as any[];
+      expect(rows).toHaveLength(4);
+      expect(rows.every((r) => r.tenant_id === T_A)).toBe(true);
+      // L'entrée du tenant C n'apparaît pas — c'est le point.
+      expect(rows.some((r) => r.tenant_id === T_C)).toBe(false);
+    });
+
+    it('rend les plus récentes d’abord', async () => {
+      const audit = await seed();
+      const rows = (await audit.list(T_A)) as any[];
+      const ids = rows.map((r) => Number(r.id));
+      expect(ids).toEqual([...ids].sort((a, b) => b - a));
+    });
+
+    it('filtre par ressource', async () => {
+      const audit = await seed();
+      const rows = (await audit.list(T_A, { ressourceId: EV_1 })) as any[];
+      expect(rows).toHaveLength(3);
+      expect(rows.every((r) => r.ressource_id === EV_1)).toBe(true);
+    });
+
+    it('respecte la limite demandée', async () => {
+      const audit = await seed();
+      const rows = (await audit.list(T_A, { limit: 2 })) as any[];
+      expect(rows).toHaveLength(2);
+    });
+
+    it('PLAFONNE la limite à 1000, même si on demande plus', async () => {
+      // Sans ce plafond, un appel `?limit=10000000` ferait du journal un
+      // levier de déni de service — c'est la table qui grossit le plus vite.
+      //
+      // Mesure directe : on dépasse réellement le plafond. Avec 4 entrées
+      // aucune limite ne se distingue, donc on en insère 1002.
+      const audit = new AuditService(admin);
+      const valeurs = Array.from({ length: 1002 }, (_, i) =>
+        sql`(${T_A}, ${U_1}, 'organisateur', ${`event.update.${i}`}, 'evenement')`,
+      );
+      await sql`
+        insert into journal_audit
+          (tenant_id, acteur_id, acteur_role, action, cible_type)
+        values ${sql.join(valeurs)}
+      `.execute(admin);
+
+      const plafonne = (await audit.list(T_A, { limit: 999_999 })) as any[];
+      expect(plafonne).toHaveLength(1000);
+
+      // Et la valeur par défaut est bien 100.
+      const defaut = (await audit.list(T_A)) as any[];
+      expect(defaut).toHaveLength(100);
+    });
+
+    it('un tenant sans entrée rend une liste vide, pas une erreur', async () => {
+      const audit = await seed();
+      const rows = await audit.list('44444444-4444-4444-4444-444444444444');
+      expect(rows).toEqual([]);
+    });
+  });
 });
 
 describe('T3.7 — puits de permissions', () => {

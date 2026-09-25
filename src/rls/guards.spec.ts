@@ -150,7 +150,6 @@ describe('auditRls — chaque anomalie créée délibérément', () => {
       table: 'appartenance',
       policy: 'tenant_isolation',
     });
-    const msg = errors.find((e) => e.includes('sans'))!;
     expect(errors.some((e) => e.includes('WITH CHECK'))).toBe(true);
     expect(errors.some((e) => e.includes('INSERT légitimes'))).toBe(true);
   });
@@ -217,5 +216,60 @@ describe('assertRlsIsSound', () => {
     } finally {
       await runtime.destroy();
     }
+  });
+
+  /**
+   * `auditRls` détectait déjà ces deux anomalies, mais `assertRlsIsSound` — la
+   * fonction appelée au DÉMARRAGE — ne les avait jamais rencontrées. Un défaut
+   * détecté par l'audit mais absent du message de démarrage ne bloque rien.
+   */
+  it('NOMME la policy fautive quand un WITH CHECK manque', async () => {
+    await sql`drop policy tenant_isolation on appartenance`.execute(db);
+    await sql`
+      create policy tenant_isolation on appartenance as restrictive
+      using (tenant_id = (select nullif(current_setting('app.tenant', true), '')::uuid))
+    `.execute(db);
+
+    const runtime = mkDb(DB, 'app_runtime', CREDENTIALS.runtime);
+    try {
+      let message = '';
+      await assertRlsIsSound(runtime).catch((e) => {
+        message = (e as Error).message;
+      });
+      expect(message).toContain('sans WITH CHECK');
+      // table.policy : sans le nom, il faut chercher laquelle.
+      expect(message).toContain('appartenance.tenant_isolation');
+    } finally {
+      await runtime.destroy();
+    }
+  });
+
+  it('NOMME la contrainte quand une unicité est globale', async () => {
+    // Une UNIQUE globale est un oracle d'existence : elle révèle qu'une valeur
+    // existe chez un AUTRE tenant. C'est une fuite, pas une gêne.
+    await sql`alter table appartenance add column ref text`.execute(db);
+    await sql`alter table appartenance add constraint ref_global unique (ref)`.execute(db);
+
+    const runtime = mkDb(DB, 'app_runtime', CREDENTIALS.runtime);
+    try {
+      let message = '';
+      await assertRlsIsSound(runtime).catch((e) => {
+        message = (e as Error).message;
+      });
+      expect(message).toContain('unicité globale');
+      expect(message).toContain('appartenance.ref_global');
+    } finally {
+      await runtime.destroy();
+    }
+  });
+
+  it('signale un rôle non bridé — BYPASSRLS contourne tout', async () => {
+    // Le superuser du test EST non bridé : c'est le cas le plus courant en
+    // développement, et le plus dangereux si on le garde en production.
+    let message = '';
+    await assertRlsIsSound(db).catch((e) => {
+      message = (e as Error).message;
+    });
+    expect(message).toContain('rôle non bridé');
   });
 });

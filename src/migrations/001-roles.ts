@@ -28,8 +28,14 @@ export interface RoleCredentials {
   auth: string;
 }
 
-/** Refuse un mot de passe qui casserait le littéral SQL. */
-function assertSafePassword(role: string, password: string): void {
+/**
+ * Refuse un mot de passe qui casserait le littéral SQL.
+ *
+ * Exportée pour être testable directement : la vérifier via `runMigrations`
+ * imposerait de réaligner un mot de passe de rôle, et les rôles sont GLOBAUX
+ * AU CLUSTER — le test casserait les suites tournant en parallèle.
+ */
+export function assertSafePassword(role: string, password: string): void {
   if (!password || password.length < 8) {
     throw new Error(
       `Mot de passe du rôle « ${role} » trop court (minimum 8 caractères). ` +

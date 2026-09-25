@@ -10,13 +10,15 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/glo
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
 import { runMigrations, rollbackMigrations, MIGRATIONS } from './runner.js';
+import { assertSafePassword } from './001-roles.js';
 import type { TenancyLogger } from '../logging.js';
 
 const { Pool, Client } = pg;
 const DB = 'tenancy_test';
 
 // Mots de passe de TEST uniquement. La validation exige 8 caractères minimum
-// et refuse apostrophes et antislashs — vérifié plus bas.
+// et refuse apostrophes et antislashs — vérifié par le describe
+// « validation des mots de passe de rôle ».
 const CREDENTIALS = {
   migration: 'test_migration_pwd',
   runtime: 'test_runtime_pwd',
@@ -196,6 +198,77 @@ describe('runMigrations', () => {
     expect(errors).toHaveLength(0);
     expect(warns).toHaveLength(0);
     expect(logs.length).toBeGreaterThanOrEqual(MIGRATIONS.length);
+  });
+});
+
+/**
+ * Validation des mots de passe de rôle.
+ *
+ * `CREATE ROLE` n'accepte PAS de paramètre lié : le mot de passe est
+ * nécessairement interpolé dans un `sql.raw`. La validation est donc la seule
+ * barrière contre une injection à cet endroit, et elle n'était pas mesurée —
+ * le commentaire en tête de ce fichier annonçait une vérification absente.
+ */
+describe('validation des mots de passe de rôle', () => {
+  const bons = { ...CREDENTIALS };
+
+  it('refuse un mot de passe de moins de 8 caractères', async () => {
+    await expect(
+      runMigrations(db, { credentials: { ...bons, runtime: 'court' } }),
+    ).rejects.toThrow(/trop court/);
+  });
+
+  it('refuse un mot de passe vide', async () => {
+    await expect(
+      runMigrations(db, { credentials: { ...bons, auth: '' } }),
+    ).rejects.toThrow(/trop court/);
+  });
+
+  it('refuse une APOSTROPHE — la sortie du littéral SQL', async () => {
+    // Sans ce refus : CREATE ROLE app_runtime login password 'x'; DROP …
+    await expect(
+      runMigrations(db, {
+        credentials: { ...bons, runtime: "x'; drop table tenant; --" },
+      }),
+    ).rejects.toThrow(/apostrophe ou un antislash/);
+  });
+
+  it('refuse un ANTISLASH', async () => {
+    await expect(
+      runMigrations(db, { credentials: { ...bons, migration: 'abcdefgh\\' } }),
+    ).rejects.toThrow(/apostrophe ou un antislash/);
+  });
+
+  it('le refus NOMME le rôle concerné et dit quoi faire', async () => {
+    // Un message qui ne dit pas quel rôle corriger oblige à chercher.
+    await expect(
+      runMigrations(db, { credentials: { ...bons, auth: 'abc' } }),
+    ).rejects.toThrow(/app_auth|auth/);
+    await expect(
+      runMigrations(db, { credentials: { ...bons, auth: 'abc' } }),
+    ).rejects.toThrow(/jamais en dur/);
+  });
+
+  it('accepte un mot de passe conforme mais inhabituel', async () => {
+    // La validation ne doit pas être plus restrictive que nécessaire : seules
+    // l'apostrophe et l'antislash cassent le littéral.
+    //
+    // On appelle la validation DIRECTEMENT : passer par runMigrations
+    // réaligne un mot de passe de rôle, et les rôles sont globaux au cluster
+    // (défaut n°2 de la phase 3) — le test casserait les suites tournant en
+    // parallèle.
+    expect(() =>
+      assertSafePassword('app_runtime', 'aB3!#$%&*()-_=+[]{}|;:,.<>?/~`"'),
+    ).not.toThrow();
+  });
+
+  it('la validation directe refuse les mêmes cas', () => {
+    expect(() => assertSafePassword('r', 'court')).toThrow(/trop court/);
+    expect(() => assertSafePassword('r', '')).toThrow(/trop court/);
+    expect(() => assertSafePassword('r', "abcdefgh'")).toThrow(/apostrophe/);
+    expect(() => assertSafePassword('r', 'abcdefgh\\')).toThrow(/antislash/);
+    // Exactement 8 caractères : la borne est inclusive.
+    expect(() => assertSafePassword('r', 'abcdefgh')).not.toThrow();
   });
 });
 
