@@ -21,8 +21,8 @@
   "license": "ISC",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx --no-install jest",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules npx --no-install jest --coverage"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0 || ^12.0.0",
