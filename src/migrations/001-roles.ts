@@ -110,7 +110,9 @@ export async function up(
       // l'erreur est inoffensive : on la signale sans échouer.
       try {
         await sql.raw(`alter role ${r.name} ${r.options}${pwd}`).execute(db);
-        logger?.debug(`Rôle « ${r.name} » déjà présent — mot de passe et options réalignés`);
+        logger?.debug(
+          `Rôle « ${r.name} » déjà présent — mot de passe et options réalignés`,
+        );
       } catch (e) {
         const msg = (e as Error).message;
         if (!msg.includes('concurrently updated')) throw e;
@@ -135,8 +137,9 @@ export async function up(
   // PostgreSQL 15+ a retiré CREATE au rôle PUBLIC sur le schéma public.
   // Sans ce GRANT, la première table échoue sur
   // « permission denied for schema public » (mesuré phase 0).
-  await sql`grant usage on schema public to app_runtime, app_migration, app_policy`
-    .execute(db);
+  await sql`grant usage on schema public to app_runtime, app_migration, app_policy`.execute(
+    db,
+  );
   await sql`grant create on schema public to app_migration`.execute(db);
   await sql`
     alter default privileges for role app_migration in schema public

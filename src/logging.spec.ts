@@ -77,9 +77,22 @@ describe('MSG — inventaire complet', () => {
     // sans action corrective ne rappelle rien. On vérifie TOUS les messages,
     // pas un échantillon — c'est ainsi qu'un ajout futur est couvert.
     const verbes = [
-      'Enveloppez', 'Vérifiez', 'Ajoutez', 'ALTER TABLE', 'withRlsDisabled',
-      'NOBYPASSRLS', 'permissive', 'Passez', 'Relancez', 'Utilisez',
-      'Déclarez', 'Corrigez', 'Créez', 'Retirez', 'Appelez', 'Posez',
+      'Enveloppez',
+      'Vérifiez',
+      'Ajoutez',
+      'ALTER TABLE',
+      'withRlsDisabled',
+      'NOBYPASSRLS',
+      'permissive',
+      'Passez',
+      'Relancez',
+      'Utilisez',
+      'Déclarez',
+      'Corrigez',
+      'Créez',
+      'Retirez',
+      'Appelez',
+      'Posez',
     ];
 
     /**
@@ -91,11 +104,7 @@ describe('MSG — inventaire complet', () => {
     const echantillon = (fn: unknown): string => {
       if (typeof fn !== 'function') return String(fn);
       const f = fn as (...a: any[]) => string;
-      const formes: any[][] = [
-        ['op', 'x', 'y'],
-        [['table_a', 'table_b']],
-        [],
-      ];
+      const formes: any[][] = [['op', 'x', 'y'], [['table_a', 'table_b']], []];
       for (const args of formes) {
         try {
           return f(...args);

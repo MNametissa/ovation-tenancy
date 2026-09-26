@@ -29,7 +29,12 @@ function mkDb(database: string, user = 'postgres', password = 'probe') {
   return new Kysely<any>({
     dialect: new PostgresDialect({
       pool: new Pool({
-        host: '127.0.0.1', port: 55432, database, user, password, max: 3,
+        host: '127.0.0.1',
+        port: 55432,
+        database,
+        user,
+        password,
+        max: 3,
       }),
     }),
   });
@@ -53,8 +58,11 @@ let db: Kysely<any>;
 
 beforeAll(async () => {
   const admin = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await admin.connect();
   await admin.query(`drop database if exists ${DB}`);
@@ -66,8 +74,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.destroy();
   const admin = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await admin.connect();
   await admin.query(`drop database if exists ${DB}`);
@@ -118,7 +129,11 @@ describe('runMigrations', () => {
 
   it('crée les quatre rôles, dont app_policy en BYPASSRLS', async () => {
     await runMigrations(db, { credentials: CREDENTIALS });
-    const r = await sql<{ rolname: string; rolbypassrls: boolean; rolcanlogin: boolean }>`
+    const r = await sql<{
+      rolname: string;
+      rolbypassrls: boolean;
+      rolcanlogin: boolean;
+    }>`
       select rolname, rolbypassrls, rolcanlogin from pg_roles
       where rolname in ('app_migration','app_runtime','app_policy','app_auth')
       order by rolname
@@ -126,7 +141,10 @@ describe('runMigrations', () => {
 
     const byName = Object.fromEntries(r.rows.map((x) => [x.rolname, x]));
     expect(Object.keys(byName).sort()).toEqual([
-      'app_auth', 'app_migration', 'app_policy', 'app_runtime',
+      'app_auth',
+      'app_migration',
+      'app_policy',
+      'app_runtime',
     ]);
     // app_runtime NE DOIT PAS contourner la RLS
     expect(byName['app_runtime'].rolbypassrls).toBe(false);

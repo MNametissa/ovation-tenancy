@@ -24,7 +24,14 @@ const CREDENTIALS = {
 function mkDb(database: string, user = 'postgres', password = 'probe') {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({ host: '127.0.0.1', port: 55432, database, user, password, max: 3 }),
+      pool: new Pool({
+        host: '127.0.0.1',
+        port: 55432,
+        database,
+        user,
+        password,
+        max: 3,
+      }),
     }),
   });
 }
@@ -45,8 +52,11 @@ let db: Kysely<any>;
 
 beforeAll(async () => {
   const admin = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await admin.connect();
   await admin.query(`drop database if exists ${DB}`);
@@ -58,8 +68,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.destroy();
   const admin = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await admin.connect();
   await admin.query(`drop database if exists ${DB}`);
@@ -156,7 +169,9 @@ describe('auditRls — chaque anomalie créée délibérément', () => {
 
   it("détecte une unicité globale — l'oracle d'existence inter-tenant", async () => {
     await sql`alter table appartenance add column ref text`.execute(db);
-    await sql`alter table appartenance add constraint ref_global unique (ref)`.execute(db);
+    await sql`alter table appartenance add constraint ref_global unique (ref)`.execute(
+      db,
+    );
 
     const { logger, errors } = mkLogger();
     const a = await auditRls(db, logger);
@@ -170,10 +185,11 @@ describe('auditRls — chaque anomalie créée délibérément', () => {
     expect(msg).toContain('UNIQUE (tenant_id'); // la correction exacte
   });
 
-  it("accepte une unicité correctement scopée", async () => {
+  it('accepte une unicité correctement scopée', async () => {
     await sql`alter table appartenance add column ref text`.execute(db);
-    await sql`alter table appartenance add constraint ref_scoped unique (tenant_id, ref)`
-      .execute(db);
+    await sql`alter table appartenance add constraint ref_scoped unique (tenant_id, ref)`.execute(
+      db,
+    );
     const a = await auditRls(db);
     expect(a.globalUniques.map((x) => x.constraint)).not.toContain('ref_scoped');
   });
@@ -248,7 +264,9 @@ describe('assertRlsIsSound', () => {
     // Une UNIQUE globale est un oracle d'existence : elle révèle qu'une valeur
     // existe chez un AUTRE tenant. C'est une fuite, pas une gêne.
     await sql`alter table appartenance add column ref text`.execute(db);
-    await sql`alter table appartenance add constraint ref_global unique (ref)`.execute(db);
+    await sql`alter table appartenance add constraint ref_global unique (ref)`.execute(
+      db,
+    );
 
     const runtime = mkDb(DB, 'app_runtime', CREDENTIALS.runtime);
     try {

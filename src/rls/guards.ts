@@ -138,6 +138,9 @@ async function checkRole(db: Kysely<any>): Promise<string | null> {
     select rolname, rolbypassrls, rolsuper from pg_roles where rolname = current_user
   `.execute(db);
   const row = r.rows[0];
+  // Kysely type `rows[0]` comme non-nullable, mais une requête PEUT ne rien
+  // rendre — `current_user` absent de `pg_roles` après un DROP ROLE concurrent.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (!row) return null;
   const why: string[] = [];
   if (row.rolbypassrls) why.push('a BYPASSRLS');
@@ -202,7 +205,12 @@ export async function auditRls(
   }
 
   if (unsafeRole) {
-    logger?.error(MSG.unsafeRole(unsafeRole.split(' ')[0], unsafeRole.split(' ').slice(1).join(' ')));
+    logger?.error(
+      MSG.unsafeRole(
+        unsafeRole.split(' ')[0],
+        unsafeRole.split(' ').slice(1).join(' '),
+      ),
+    );
   }
 
   const ok =
@@ -240,7 +248,8 @@ export async function assertRlsIsSound(
 
   const problems: string[] = [];
   if (a.missingForce.length) problems.push(`sans FORCE : ${a.missingForce.join(', ')}`);
-  if (a.withoutPolicy.length) problems.push(`sans policy : ${a.withoutPolicy.join(', ')}`);
+  if (a.withoutPolicy.length)
+    problems.push(`sans policy : ${a.withoutPolicy.join(', ')}`);
   if (a.withoutPermissive.length)
     problems.push(`sans permissive : ${a.withoutPermissive.join(', ')}`);
   if (a.missingWithCheck.length)

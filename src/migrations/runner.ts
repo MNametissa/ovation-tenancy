@@ -77,7 +77,9 @@ async function ensureTable(db: Kysely<any>): Promise<void> {
 }
 
 async function alreadyApplied(db: Kysely<any>): Promise<Set<string>> {
-  const rows = await sql<{ name: string }>`select name from ${sql.ref(TABLE)}`.execute(db);
+  const rows = await sql<{ name: string }>`select name from ${sql.ref(TABLE)}`.execute(
+    db,
+  );
   return new Set(rows.rows.map((r) => r.name));
 }
 
@@ -123,13 +125,15 @@ export async function runMigrations(
         // Sans risque ici : elle ne touche ni aux tables ni à FORCE RLS, donc
         // rien ne peut rester à moitié appliqué de façon dangereuse.
         await migration.up(db, credentials, logger);
-        await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`
-          .execute(db);
+        await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`.execute(
+          db,
+        );
       } else {
         await db.transaction().execute(async (trx) => {
           await migration.up(trx, credentials, logger);
-          await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`
-            .execute(trx);
+          await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`.execute(
+            trx,
+          );
         });
       }
       applied.push(migration.name);
@@ -177,6 +181,10 @@ export async function rollbackMigrations(
   db: Kysely<any>,
   opts: { logger?: TenancyLogger; iUnderstandThisIsDestructive: true },
 ): Promise<string[]> {
+  // Le type exige littéralement `true`, donc TypeScript croit la condition
+  // morte. Mais un appelant JavaScript passe ce qu'il veut, et c'est pour lui
+  // que ce garde existe — couvert par le test « exige un aveu explicite ».
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (!opts.iUnderstandThisIsDestructive) {
     throw new Error(
       'rollbackMigrations() supprime les tables et leurs données. ' +
@@ -197,8 +205,9 @@ export async function rollbackMigrations(
     );
     await db.transaction().execute(async (trx) => {
       await migration.down(trx, logger);
-      await sql`delete from ${sql.ref(TABLE)} where name = ${migration.name}`
-        .execute(trx);
+      await sql`delete from ${sql.ref(TABLE)} where name = ${migration.name}`.execute(
+        trx,
+      );
     });
     reverted.push(migration.name);
   }
