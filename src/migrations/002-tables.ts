@@ -146,8 +146,9 @@ export async function up(db: Kysely<any>): Promise<void> {
     to app_runtime
   `.execute(db);
   await sql`grant select, insert on journal_audit to app_runtime`.execute(db);
-  await sql`grant usage, select on all sequences in schema public to app_runtime`
-    .execute(db);
+  await sql`grant usage, select on all sequences in schema public to app_runtime`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {

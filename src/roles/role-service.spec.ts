@@ -56,8 +56,11 @@ async function asUser<T>(
 
 beforeAll(async () => {
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
@@ -74,8 +77,11 @@ afterAll(async () => {
   await runtime.destroy();
   await admin.destroy();
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
@@ -83,7 +89,13 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  for (const t of ['appartenance', 'role_permission', 'role', 'tenant', 'utilisateur']) {
+  for (const t of [
+    'appartenance',
+    'role_permission',
+    'role',
+    'tenant',
+    'utilisateur',
+  ]) {
     await sql.raw(`alter table ${t} no force row level security`).execute(admin);
   }
   await sql`delete from appartenance`.execute(admin);
@@ -106,7 +118,13 @@ beforeEach(async () => {
 
   await roles.ensureSystemRoles();
 
-  for (const t of ['appartenance', 'role_permission', 'role', 'tenant', 'utilisateur']) {
+  for (const t of [
+    'appartenance',
+    'role_permission',
+    'role',
+    'tenant',
+    'utilisateur',
+  ]) {
     await sql.raw(`alter table ${t} force row level security`).execute(admin);
   }
 });
@@ -147,7 +165,10 @@ describe('T3.6 — rôles système', () => {
 
     const warns: string[] = [];
     const svc = new RoleService(admin, {
-      error: () => {}, warn: (m) => warns.push(m), log: () => {}, debug: () => {},
+      error: () => {},
+      warn: (m) => warns.push(m),
+      log: () => {},
+      debug: () => {},
     });
 
     // Ne doit PAS lever.
@@ -167,7 +188,9 @@ describe('T3.6 — rôles système', () => {
     // décalage de version.
     await expect(
       roles.createTenantRole(T_A, {
-        code: 'strict', libelle: 'Strict', permissions: ['jamais.vue'],
+        code: 'strict',
+        libelle: 'Strict',
+        permissions: ['jamais.vue'],
       }),
     ).rejects.toThrow(/inconnue\(s\) du catalogue/);
   });
@@ -211,7 +234,9 @@ describe('T3.6 — rôles propres au tenant', () => {
 
   it('un rôle du tenant A est invisible du tenant B', async () => {
     await roles.createTenantRole(T_A, {
-      code: 'coach', libelle: 'Coach', permissions: [],
+      code: 'coach',
+      libelle: 'Coach',
+      permissions: [],
     });
     const forB = await roles.listRoles(T_B);
     expect(forB.map((r) => r.code)).not.toContain('coach');
@@ -222,19 +247,25 @@ describe('T3.6 — rôles propres au tenant', () => {
   it('refuse une permission inconnue du catalogue, et dit pourquoi', async () => {
     await expect(
       roles.createTenantRole(T_A, {
-        code: 'bidon', libelle: 'Bidon', permissions: ['inventee.permission'],
+        code: 'bidon',
+        libelle: 'Bidon',
+        permissions: ['inventee.permission'],
       }),
     ).rejects.toThrow(/inconnue\(s\) du catalogue/);
     await expect(
       roles.createTenantRole(T_A, {
-        code: 'bidon2', libelle: 'Bidon', permissions: ['inventee.permission'],
+        code: 'bidon2',
+        libelle: 'Bidon',
+        permissions: ['inventee.permission'],
       }),
     ).rejects.toThrow(/ne protège rien/);
   });
 
   it('refuse de supprimer un rôle attribué, et dit combien', async () => {
     const coach = await roles.createTenantRole(T_A, {
-      code: 'coach', libelle: 'Coach', permissions: [],
+      code: 'coach',
+      libelle: 'Coach',
+      permissions: [],
     });
     await sql`alter table appartenance no force row level security`.execute(admin);
     await sql`insert into appartenance (tenant_id, utilisateur_id, role_id)
@@ -248,7 +279,9 @@ describe('T3.6 — rôles propres au tenant', () => {
 
   it('supprime un rôle non attribué', async () => {
     await roles.createTenantRole(T_A, {
-      code: 'temporaire', libelle: 'Temp', permissions: [],
+      code: 'temporaire',
+      libelle: 'Temp',
+      permissions: [],
     });
     await expect(roles.deleteTenantRole(T_A, 'temporaire')).resolves.toBeUndefined();
   });
@@ -260,8 +293,9 @@ describe('T3.5 — app_a_permission', () => {
     const orga = await sql<{ id: string }>`
       select id from role where code = 'organisateur'
     `.execute(admin);
-    const jure = await sql<{ id: string }>`select id from role where code = 'jure'`
-      .execute(admin);
+    const jure = await sql<{
+      id: string;
+    }>`select id from role where code = 'jure'`.execute(admin);
 
     await sql`insert into role_permission (role_id, permission_id)
       select ${orga.rows[0].id}, id from permission
@@ -282,14 +316,18 @@ describe('T3.5 — app_a_permission', () => {
 
   it('rend true pour une permission détenue', async () => {
     const r = await asUser(T_A, U_1, (trx) =>
-      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(trx),
+      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(
+        trx,
+      ),
     );
     expect(r.rows[0].ok).toBe(true);
   });
 
   it('rend false pour une permission non détenue', async () => {
     const r = await asUser(T_A, U_2, (trx) =>
-      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(trx),
+      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(
+        trx,
+      ),
     );
     expect(r.rows[0].ok).toBe(false);
   });
@@ -298,7 +336,9 @@ describe('T3.5 — app_a_permission', () => {
     // L'appartenance est scopée au tenant : changer de tenant retire les
     // permissions, sans changer d'utilisateur.
     const r = await asUser(T_B, U_1, (trx) =>
-      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(trx),
+      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(
+        trx,
+      ),
     );
     expect(r.rows[0].ok).toBe(false);
   });
@@ -306,26 +346,33 @@ describe('T3.5 — app_a_permission', () => {
   it('rend false sans contexte utilisateur', async () => {
     const r = await runtime.transaction().execute(async (trx) => {
       await sql`select set_config('app.tenant', ${T_A}, true)`.execute(trx);
-      return sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`
-        .execute(trx);
+      return sql<{
+        ok: boolean;
+      }>`select app_a_permission('event.read.all') as ok`.execute(trx);
     });
     expect(r.rows[0].ok).toBe(false);
   });
 
   it('ignore une permission marquée obsolète', async () => {
-    await sql`update permission set obsolete_le = now() where code = 'event.read.all'`
-      .execute(admin);
+    await sql`update permission set obsolete_le = now() where code = 'event.read.all'`.execute(
+      admin,
+    );
     const r = await asUser(T_A, U_1, (trx) =>
-      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(trx),
+      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(
+        trx,
+      ),
     );
     expect(r.rows[0].ok).toBe(false);
-    await sql`update permission set obsolete_le = null where code = 'event.read.all'`
-      .execute(admin);
+    await sql`update permission set obsolete_le = null where code = 'event.read.all'`.execute(
+      admin,
+    );
   });
 
   it('RÉVOCATION IMMÉDIATE : retirer l’appartenance retire la permission', async () => {
     const before = await asUser(T_A, U_1, (trx) =>
-      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(trx),
+      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(
+        trx,
+      ),
     );
     expect(before.rows[0].ok).toBe(true);
 
@@ -335,7 +382,9 @@ describe('T3.5 — app_a_permission', () => {
 
     // La requête SUIVANTE voit déjà la révocation : pas de cache, pas de jeton.
     const after = await asUser(T_A, U_1, (trx) =>
-      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(trx),
+      sql<{ ok: boolean }>`select app_a_permission('event.read.all') as ok`.execute(
+        trx,
+      ),
     );
     expect(after.rows[0].ok).toBe(false);
   });

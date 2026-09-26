@@ -67,18 +67,23 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await sql`drop table if exists guard_t cascade`.execute(admin);
-  await sql`create table guard_t (id serial primary key, tenant_id uuid not null, v text)`
-    .execute(admin);
+  await sql`create table guard_t (id serial primary key, tenant_id uuid not null, v text)`.execute(
+    admin,
+  );
   await sql`alter table guard_t owner to app_migration`.execute(admin);
   await sql`alter table guard_t enable row level security`.execute(admin);
   await sql`alter table guard_t force row level security`.execute(admin);
-  await sql`create policy base on guard_t for all to app_migration using (true) with check (true)`
-    .execute(admin);
+  await sql`create policy base on guard_t for all to app_migration using (true) with check (true)`.execute(
+    admin,
+  );
   await sql`create policy iso on guard_t as restrictive
             using (tenant_id = (select nullif(current_setting('app.tenant', true),'')::uuid))
-            with check (tenant_id = (select nullif(current_setting('app.tenant', true),'')::uuid))`
-    .execute(admin);
-  await sql`grant select, insert, update, delete on guard_t to app_migration`.execute(admin);
+            with check (tenant_id = (select nullif(current_setting('app.tenant', true),'')::uuid))`.execute(
+    admin,
+  );
+  await sql`grant select, insert, update, delete on guard_t to app_migration`.execute(
+    admin,
+  );
 });
 
 describe('withRlsDisabled', () => {
@@ -87,7 +92,9 @@ describe('withRlsDisabled', () => {
     await withRlsDisabled(admin, { tables: ['guard_t'], logger }, async (trx) => {
       await sql`insert into guard_t (tenant_id, v) values (${T_A}, 'x')`.execute(trx);
     });
-    const n = await sql<{ n: number }>`select count(*)::int as n from guard_t`.execute(admin);
+    const n = await sql<{ n: number }>`select count(*)::int as n from guard_t`.execute(
+      admin,
+    );
     expect(n.rows[0].n).toBe(1);
   });
 
@@ -96,7 +103,9 @@ describe('withRlsDisabled', () => {
       await sql`insert into guard_t (tenant_id, v) values (${T_A}, 'x')`.execute(trx);
     });
     const r = await sql<{ f: boolean }>`
-      select relforcerowsecurity as f from pg_class where relname='guard_t'`.execute(admin);
+      select relforcerowsecurity as f from pg_class where relname='guard_t'`.execute(
+      admin,
+    );
     expect(r.rows[0].f).toBe(true);
   });
 
@@ -111,7 +120,9 @@ describe('withRlsDisabled', () => {
     ).rejects.toThrow('panne simulée');
 
     const r = await sql<{ f: boolean }>`
-      select relforcerowsecurity as f from pg_class where relname='guard_t'`.execute(admin);
+      select relforcerowsecurity as f from pg_class where relname='guard_t'`.execute(
+      admin,
+    );
     expect(r.rows[0].f).toBe(true);
 
     // Et le développeur est PRÉVENU, avec la raison et l'absence d'action requise.
@@ -127,7 +138,9 @@ describe('withRlsDisabled', () => {
         throw new Error('après insertion');
       }),
     ).rejects.toThrow();
-    const n = await sql<{ n: number }>`select count(*)::int as n from guard_t`.execute(admin);
+    const n = await sql<{ n: number }>`select count(*)::int as n from guard_t`.execute(
+      admin,
+    );
     expect(n.rows[0].n).toBe(0);
   });
 
@@ -210,9 +223,18 @@ describe('assertRoleIsSafe', () => {
     // `drop role` échoue tant que le rôle détient des privilèges : il faut
     // révoquer d'abord. Sans ce nettoyage, un test qui échoue laisse le rôle
     // derrière lui et fait échouer tous les suivants.
-    await sql.raw(`revoke all on schema public from ${NAME}`).execute(admin).catch(() => {});
-    await sql.raw(`drop owned by ${NAME}`).execute(admin).catch(() => {});
-    await sql.raw(`drop role if exists ${NAME}`).execute(admin).catch(() => {});
+    await sql
+      .raw(`revoke all on schema public from ${NAME}`)
+      .execute(admin)
+      .catch(() => {});
+    await sql
+      .raw(`drop owned by ${NAME}`)
+      .execute(admin)
+      .catch(() => {});
+    await sql
+      .raw(`drop role if exists ${NAME}`)
+      .execute(admin)
+      .catch(() => {});
     await sql
       .raw(`create role ${NAME} login password '${PWD}' nobypassrls nosuperuser`)
       .execute(admin);
@@ -227,11 +249,20 @@ describe('assertRoleIsSafe', () => {
     } finally {
       await runtime.destroy();
       // `drop role` échoue tant que le rôle détient des privilèges : il faut
-    // révoquer d'abord. Sans ce nettoyage, un test qui échoue laisse le rôle
-    // derrière lui et fait échouer tous les suivants.
-    await sql.raw(`revoke all on schema public from ${NAME}`).execute(admin).catch(() => {});
-    await sql.raw(`drop owned by ${NAME}`).execute(admin).catch(() => {});
-    await sql.raw(`drop role if exists ${NAME}`).execute(admin).catch(() => {});
+      // révoquer d'abord. Sans ce nettoyage, un test qui échoue laisse le rôle
+      // derrière lui et fait échouer tous les suivants.
+      await sql
+        .raw(`revoke all on schema public from ${NAME}`)
+        .execute(admin)
+        .catch(() => {});
+      await sql
+        .raw(`drop owned by ${NAME}`)
+        .execute(admin)
+        .catch(() => {});
+      await sql
+        .raw(`drop role if exists ${NAME}`)
+        .execute(admin)
+        .catch(() => {});
     }
   });
 });

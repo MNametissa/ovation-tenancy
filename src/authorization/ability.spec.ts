@@ -45,8 +45,11 @@ let admin: Kysely<any>;
 
 beforeAll(async () => {
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
@@ -60,8 +63,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await admin.destroy();
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
@@ -128,8 +134,10 @@ beforeEach(async () => {
 describe('T3.9 — construction des règles', () => {
   it('dérive can(action, resource) depuis une permission', () => {
     const a = buildAbility({
-      tenantId: T_A, userId: U_ORGA,
-      permissions: ['event.publish'], scopedResourceIds: [],
+      tenantId: T_A,
+      userId: U_ORGA,
+      permissions: ['event.publish'],
+      scopedResourceIds: [],
     });
     expect(a.can('publish', 'event')).toBe(true);
     expect(a.can('delete', 'event')).toBe(false);
@@ -137,16 +145,20 @@ describe('T3.9 — construction des règles', () => {
 
   it('« .all » lève toute condition', () => {
     const a = buildAbility({
-      tenantId: T_A, userId: U_ORGA,
-      permissions: ['score.read.all'], scopedResourceIds: [EV_1],
+      tenantId: T_A,
+      userId: U_ORGA,
+      permissions: ['score.read.all'],
+      scopedResourceIds: [EV_1],
     });
     expect(a.can('read', 'score')).toBe(true);
   });
 
   it('« .own » restreint au propriétaire', () => {
     const a = buildAbility({
-      tenantId: T_A, userId: U_JURE1,
-      permissions: ['score.read.own'], scopedResourceIds: [EV_1],
+      tenantId: T_A,
+      userId: U_JURE1,
+      permissions: ['score.read.own'],
+      scopedResourceIds: [EV_1],
     });
     const sienne = { ownerId: U_JURE1, __caslSubjectType__: 'score' };
     const autre = { ownerId: U_JURE2, __caslSubjectType__: 'score' };
@@ -156,24 +168,37 @@ describe('T3.9 — construction des règles', () => {
 
   it('une permission simple est limitée à la portée', () => {
     const a = buildAbility({
-      tenantId: T_A, userId: U_ORGA,
-      permissions: ['event.update'], scopedResourceIds: [EV_1],
+      tenantId: T_A,
+      userId: U_ORGA,
+      permissions: ['event.update'],
+      scopedResourceIds: [EV_1],
     });
-    expect(a.can('update', { id: EV_1, __caslSubjectType__: 'event' } as never)).toBe(true);
-    expect(a.can('update', { id: EV_2, __caslSubjectType__: 'event' } as never)).toBe(false);
+    expect(a.can('update', { id: EV_1, __caslSubjectType__: 'event' } as never)).toBe(
+      true,
+    );
+    expect(a.can('update', { id: EV_2, __caslSubjectType__: 'event' } as never)).toBe(
+      false,
+    );
   });
 
   it('sans portée, la permission vaut partout dans le tenant', () => {
     const a = buildAbility({
-      tenantId: T_A, userId: U_ORGA,
-      permissions: ['event.update'], scopedResourceIds: [],
+      tenantId: T_A,
+      userId: U_ORGA,
+      permissions: ['event.update'],
+      scopedResourceIds: [],
     });
-    expect(a.can('update', { id: EV_2, __caslSubjectType__: 'event' } as never)).toBe(true);
+    expect(a.can('update', { id: EV_2, __caslSubjectType__: 'event' } as never)).toBe(
+      true,
+    );
   });
 
   it('aucune permission : tout est refusé', () => {
     const a = buildAbility({
-      tenantId: T_A, userId: U_JURE1, permissions: [], scopedResourceIds: [],
+      tenantId: T_A,
+      userId: U_JURE1,
+      permissions: [],
+      scopedResourceIds: [],
     });
     expect(a.can('read', 'event')).toBe(false);
     expect(a.can('publish', 'event')).toBe(false);
@@ -181,8 +206,10 @@ describe('T3.9 — construction des règles', () => {
 
   it('ignore une permission malformée sans planter', () => {
     const a = buildAbility({
-      tenantId: T_A, userId: U_ORGA,
-      permissions: ['sansaction', '', 'event.'], scopedResourceIds: [],
+      tenantId: T_A,
+      userId: U_ORGA,
+      permissions: ['sansaction', '', 'event.'],
+      scopedResourceIds: [],
     });
     expect(a.rules.length).toBe(0);
   });
@@ -209,12 +236,14 @@ describe('T3.9 — chargement depuis la base', () => {
   });
 
   it('ignore les permissions obsolètes', async () => {
-    await sql`update permission set obsolete_le = now() where code = 'event.publish'`
-      .execute(admin);
+    await sql`update permission set obsolete_le = now() where code = 'event.publish'`.execute(
+      admin,
+    );
     const ctx = await loadAbilityContext(admin, T_A, U_ORGA);
     expect(ctx.permissions).not.toContain('event.publish');
-    await sql`update permission set obsolete_le = null where code = 'event.publish'`
-      .execute(admin);
+    await sql`update permission set obsolete_le = null where code = 'event.publish'`.execute(
+      admin,
+    );
   });
 
   it('RÉVOCATION IMMÉDIATE : sans cache ni jeton', async () => {
@@ -222,15 +251,21 @@ describe('T3.9 — chargement depuis la base', () => {
     // Interrogé sur un TYPE sans instance, CASL rend true dès qu'une règle
     // existe — il ne peut pas évaluer une condition sans objet. La vérification
     // utile porte donc toujours sur une INSTANCE.
-    expect(before.can('publish', { id: EV_1, __caslSubjectType__: 'event' } as never)).toBe(true);
-    expect(before.can('publish', { id: EV_2, __caslSubjectType__: 'event' } as never)).toBe(false);
+    expect(
+      before.can('publish', { id: EV_1, __caslSubjectType__: 'event' } as never),
+    ).toBe(true);
+    expect(
+      before.can('publish', { id: EV_2, __caslSubjectType__: 'event' } as never),
+    ).toBe(false);
 
     await sql`alter table appartenance no force row level security`.execute(admin);
     await sql`delete from appartenance where utilisateur_id = ${U_ORGA}`.execute(admin);
     await sql`alter table appartenance force row level security`.execute(admin);
 
     const after = buildAbility(await loadAbilityContext(admin, T_A, U_ORGA));
-    expect(after.can('publish', { id: EV_1, __caslSubjectType__: 'event' } as never)).toBe(false);
+    expect(
+      after.can('publish', { id: EV_1, __caslSubjectType__: 'event' } as never),
+    ).toBe(false);
   });
 });
 
@@ -278,14 +313,12 @@ describe('T3.9 — LE test : deux barrières indépendantes', () => {
     const a = buildAbility(await loadAbilityContext(admin, T_A, U_JURE1));
 
     // Sa note : autorisée.
-    expect(() =>
-      assertCan(a, 'read', 'score', { ownerId: U_JURE1 }),
-    ).not.toThrow();
+    expect(() => assertCan(a, 'read', 'score', { ownerId: U_JURE1 })).not.toThrow();
 
     // Celle du juré 2, MÊME tenant, MÊME évènement : refusée.
-    expect(() =>
-      assertCan(a, 'read', 'score', { ownerId: U_JURE2 }),
-    ).toThrow(ForbiddenError);
+    expect(() => assertCan(a, 'read', 'score', { ownerId: U_JURE2 })).toThrow(
+      ForbiddenError,
+    );
   });
 
   it('… et refusé par la RLS, indépendamment de CASL', async () => {
@@ -307,11 +340,13 @@ describe('T3.9 — LE test : deux barrières indépendantes', () => {
     await sql`create policy base on note_jury for all to app_runtime
               using (true) with check (true)`.execute(admin);
     await sql`create policy tenant_iso on note_jury as restrictive
-              using (tenant_id = (select nullif(current_setting('app.tenant', true),'')::uuid))`
-      .execute(admin);
+              using (tenant_id = (select nullif(current_setting('app.tenant', true),'')::uuid))`.execute(
+      admin,
+    );
     await sql`create policy own_only on note_jury as restrictive for select
-              using (jure_id = (select nullif(current_setting('app.user', true),'')::uuid))`
-      .execute(admin);
+              using (jure_id = (select nullif(current_setting('app.user', true),'')::uuid))`.execute(
+      admin,
+    );
 
     const runtime = mkDb(DB, 'app_runtime', CREDENTIALS.runtime, 1);
     try {
@@ -347,8 +382,9 @@ describe('T3.9 — LE test : deux barrières indépendantes', () => {
     await sql`create policy base on note_jury for all to app_runtime
               using (true) with check (true)`.execute(admin);
     await sql`create policy own_only on note_jury as restrictive for select
-              using (jure_id = (select nullif(current_setting('app.user', true),'')::uuid))`
-      .execute(admin);
+              using (jure_id = (select nullif(current_setting('app.user', true),'')::uuid))`.execute(
+      admin,
+    );
 
     const runtime = mkDb(DB, 'app_runtime', CREDENTIALS.runtime, 1);
     try {

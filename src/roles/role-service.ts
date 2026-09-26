@@ -164,7 +164,9 @@ export class RoleService {
 
     const role = ins.rows[0];
     await this.attachPermissions(role.id, input.permissions);
-    this.logger?.log(`Rôle « ${input.code} » créé pour le tenant ${tenantId.slice(0, 8)}…`);
+    this.logger?.log(
+      `Rôle « ${input.code} » créé pour le tenant ${tenantId.slice(0, 8)}…`,
+    );
     return role;
   }
 

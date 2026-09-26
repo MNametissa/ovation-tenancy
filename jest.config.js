@@ -17,10 +17,7 @@ export default {
   // must run in ESM mode too. Relative imports therefore need the .js suffix.
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
   transform: {
-    '^.+\\.ts$': [
-      'ts-jest',
-      { useESM: true, tsconfig: '<rootDir>/../tsconfig.json' },
-    ],
+    '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: '<rootDir>/../tsconfig.json' }],
   },
   // Coverage is measured on code that runs at BOOTSTRAP: the tests build real
   // Nest applications and call app.init(), which is what fires

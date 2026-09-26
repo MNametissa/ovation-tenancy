@@ -1,9 +1,4 @@
-export {
-  createLogger,
-  MSG,
-  TENANCY_LOGGER,
-  type TenancyLogger,
-} from './logging.js';
+export { createLogger, MSG, TENANCY_LOGGER, type TenancyLogger } from './logging.js';
 
 export {
   withRlsDisabled,
