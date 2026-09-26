@@ -51,8 +51,11 @@ let runtime: Kysely<any>;
 
 beforeAll(async () => {
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
@@ -68,8 +71,11 @@ afterAll(async () => {
   await runtime.destroy();
   await admin.destroy();
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
@@ -77,8 +83,14 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  for (const t of ['journal_audit', 'appartenance', 'role_permission', 'role',
-                   'tenant', 'utilisateur']) {
+  for (const t of [
+    'journal_audit',
+    'appartenance',
+    'role_permission',
+    'role',
+    'tenant',
+    'utilisateur',
+  ]) {
     await sql.raw(`alter table ${t} no force row level security`).execute(admin);
   }
   // journal_audit porte des règles DO INSTEAD NOTHING : on les lève le temps
@@ -86,8 +98,9 @@ beforeEach(async () => {
   // d'immuabilité vérifieront ensuite.
   await sql`drop rule if exists journal_no_delete on journal_audit`.execute(admin);
   await sql`delete from journal_audit`.execute(admin);
-  await sql`create rule journal_no_delete as on delete to journal_audit do instead nothing`
-    .execute(admin);
+  await sql`create rule journal_no_delete as on delete to journal_audit do instead nothing`.execute(
+    admin,
+  );
 
   await sql`delete from appartenance`.execute(admin);
   await sql`delete from role_permission`.execute(admin);
@@ -101,8 +114,14 @@ beforeEach(async () => {
   await sql`insert into utilisateur (id, auth_sub, email)
             values (${U_1}, 'sub-1', 'u1@test.cm')`.execute(admin);
 
-  for (const t of ['journal_audit', 'appartenance', 'role_permission', 'role',
-                   'tenant', 'utilisateur']) {
+  for (const t of [
+    'journal_audit',
+    'appartenance',
+    'role_permission',
+    'role',
+    'tenant',
+    'utilisateur',
+  ]) {
     await sql.raw(`alter table ${t} force row level security`).execute(admin);
   }
 });
@@ -111,8 +130,11 @@ describe('T3.8 — journal d’audit', () => {
   it('enregistre une entrée avec son empreinte', async () => {
     const audit = new AuditService(admin);
     await audit.record({
-      tenantId: T_A, acteurId: U_1, acteurRole: 'organisateur',
-      action: 'event.create', cibleType: 'evenement',
+      tenantId: T_A,
+      acteurId: U_1,
+      acteurRole: 'organisateur',
+      action: 'event.create',
+      cibleType: 'evenement',
     });
     // `max()` n'existe pas pour bytea : on lit l'empreinte directement.
     const r = await sql<{ n: number; h: Buffer }>`
@@ -127,14 +149,18 @@ describe('T3.8 — journal d’audit', () => {
     const audit = new AuditService(admin);
     await expect(
       audit.record({
-        tenantId: T_A, acteurRole: 'organisateur',
-        action: 'participant.disqualify', cibleType: 'participant',
+        tenantId: T_A,
+        acteurRole: 'organisateur',
+        action: 'participant.disqualify',
+        cibleType: 'participant',
       }),
     ).rejects.toThrow(/exige un motif/);
     await expect(
       audit.record({
-        tenantId: T_A, acteurRole: 'organisateur',
-        action: 'participant.disqualify', cibleType: 'participant',
+        tenantId: T_A,
+        acteurRole: 'organisateur',
+        action: 'participant.disqualify',
+        cibleType: 'participant',
       }),
     ).rejects.toThrow(/POURQUOI/);
   });
@@ -143,8 +169,10 @@ describe('T3.8 — journal d’audit', () => {
     const audit = new AuditService(admin);
     await expect(
       audit.record({
-        tenantId: T_A, acteurRole: 'organisateur',
-        action: 'participant.disqualify', cibleType: 'participant',
+        tenantId: T_A,
+        acteurRole: 'organisateur',
+        action: 'participant.disqualify',
+        cibleType: 'participant',
         motif: 'Règlement article 7 : inscription hors délai',
       }),
     ).resolves.toBeUndefined();
@@ -153,26 +181,32 @@ describe('T3.8 — journal d’audit', () => {
   it('IMMUABLE : un UPDATE ne modifie rien', async () => {
     const audit = new AuditService(admin);
     await audit.record({
-      tenantId: T_A, acteurRole: 'organisateur',
-      action: 'event.create', cibleType: 'evenement',
+      tenantId: T_A,
+      acteurRole: 'organisateur',
+      action: 'event.create',
+      cibleType: 'evenement',
     });
 
     // La règle DO INSTEAD NOTHING absorbe l'UPDATE sans erreur : rien ne change.
     await sql`update journal_audit set action = 'falsifie'`.execute(admin);
-    const r = await sql<{ action: string }>`select action from journal_audit`
-      .execute(admin);
+    const r = await sql<{ action: string }>`select action from journal_audit`.execute(
+      admin,
+    );
     expect(r.rows[0].action).toBe('event.create');
   });
 
   it('IMMUABLE : un DELETE ne supprime rien', async () => {
     const audit = new AuditService(admin);
     await audit.record({
-      tenantId: T_A, acteurRole: 'organisateur',
-      action: 'event.create', cibleType: 'evenement',
+      tenantId: T_A,
+      acteurRole: 'organisateur',
+      action: 'event.create',
+      cibleType: 'evenement',
     });
     await sql`delete from journal_audit`.execute(admin);
-    const r = await sql<{ n: number }>`select count(*)::int as n from journal_audit`
-      .execute(admin);
+    const r = await sql<{
+      n: number;
+    }>`select count(*)::int as n from journal_audit`.execute(admin);
     expect(r.rows[0].n).toBe(1);
   });
 
@@ -195,8 +229,11 @@ describe('T3.8 — journal d’audit', () => {
     const audit = new AuditService(admin);
     for (let i = 0; i < 5; i++) {
       await audit.record({
-        tenantId: T_A, acteurId: U_1, acteurRole: 'organisateur',
-        action: `event.step${i}`, cibleType: 'evenement',
+        tenantId: T_A,
+        acteurId: U_1,
+        acteurRole: 'organisateur',
+        action: `event.step${i}`,
+        cibleType: 'evenement',
       });
     }
     const v = await audit.verifyChain(T_A);
@@ -208,8 +245,11 @@ describe('T3.8 — journal d’audit', () => {
     const audit = new AuditService(admin);
     for (let i = 0; i < 4; i++) {
       await audit.record({
-        tenantId: T_A, acteurId: U_1, acteurRole: 'organisateur',
-        action: `event.step${i}`, cibleType: 'evenement',
+        tenantId: T_A,
+        acteurId: U_1,
+        acteurRole: 'organisateur',
+        action: `event.step${i}`,
+        cibleType: 'evenement',
       });
     }
 
@@ -217,8 +257,9 @@ describe('T3.8 — journal d’audit', () => {
     // opérateur ayant accès à la base.
     await sql`drop rule journal_no_delete on journal_audit`.execute(admin);
     await sql`delete from journal_audit where action = 'event.step1'`.execute(admin);
-    await sql`create rule journal_no_delete as on delete to journal_audit do instead nothing`
-      .execute(admin);
+    await sql`create rule journal_no_delete as on delete to journal_audit do instead nothing`.execute(
+      admin,
+    );
 
     const { logger, errors } = mkLogger();
     const v = await new AuditService(admin, logger).verifyChain(T_A);
@@ -226,8 +267,58 @@ describe('T3.8 — journal d’audit', () => {
     expect(v.valid).toBe(false);
     expect(v.brokenAt).toBeDefined();
     expect(errors[0]).toContain('ROMPUE');
-    expect(errors[0]).toContain('supprimée ou');
+    // Le diagnostic doit nommer la SUPPRESSION, pas rester vague : chercher
+    // une modification quand une entrée a disparu fait perdre du temps.
+    expect(errors[0]).toContain('SUPPRIMÉE');
+    expect(errors[0]).toContain('chaînage');
     expect(errors[0]).toContain('Conservez une copie'); // dit quoi faire
+  });
+
+  it('DÉTECTE une entrée dont le CONTENU a été falsifié', async () => {
+    // Le message d'erreur promet de détecter une entrée « supprimée OU
+    // MODIFIÉE ». Détecter la suppression ne suffit donc pas : un opérateur qui
+    // change l'action d'une entrée — « participant.disqualify » devenu
+    // « participant.update » — doit casser la chaîne.
+    //
+    // TROUVÉ PAR LE LINTER : `verifyChain` calculait l'empreinte attendue puis
+    // ne l'utilisait jamais (variable `expected` assignée sans lecture). Elle
+    // ne comparait que le chaînage, donc la falsification passait.
+    const audit = new AuditService(admin);
+    for (let i = 0; i < 4; i++) {
+      await audit.record({
+        tenantId: T_A,
+        acteurId: U_1,
+        acteurRole: 'organisateur',
+        action: `event.step${i}`,
+        cibleType: 'evenement',
+      });
+    }
+
+    // Modification « par la bande », comme le ferait un opérateur : on lève la
+    // règle d'immuabilité, on change l'action, on la repose.
+    await sql`drop rule journal_no_update on journal_audit`.execute(admin);
+    await sql`update journal_audit set action = 'event.FALSIFIE'
+              where action = 'event.step2'`.execute(admin);
+    await sql`create rule journal_no_update as on update to journal_audit do instead nothing`.execute(
+      admin,
+    );
+
+    // L'entrée a bien été modifiée : le test mesure ce qu'il prétend mesurer.
+    const check = await sql<{ n: number }>`
+      select count(*)::int as n from journal_audit where action = 'event.FALSIFIE'
+    `.execute(admin);
+    expect(check.rows[0].n).toBe(1);
+
+    const { logger, errors } = mkLogger();
+    const v = await new AuditService(admin, logger).verifyChain(T_A);
+
+    expect(v.valid).toBe(false);
+    expect(v.brokenAt).toBeDefined();
+    expect(errors[0]).toContain('ROMPUE');
+    // Le diagnostic distingue la MODIFICATION de la suppression.
+    expect(errors[0]).toContain('MODIFIÉE');
+    expect(errors[0]).toContain('empreinte');
+    expect(errors[0]).not.toContain('SUPPRIMÉE');
   });
 
   it('chaîne vide : valide', async () => {
@@ -257,19 +348,27 @@ describe('T3.8 — journal d’audit', () => {
 
       for (let i = 0; i < 3; i++) {
         await audit.record({
-          tenantId: T_A, ressourceId: EV_1, acteurId: U_1,
-          acteurRole: 'organisateur', action: `event.update.${i}`,
+          tenantId: T_A,
+          ressourceId: EV_1,
+          acteurId: U_1,
+          acteurRole: 'organisateur',
+          action: `event.update.${i}`,
           cibleType: 'evenement',
         });
       }
       await audit.record({
-        tenantId: T_A, ressourceId: EV_2, acteurId: U_1,
-        acteurRole: 'organisateur', action: 'event.create',
+        tenantId: T_A,
+        ressourceId: EV_2,
+        acteurId: U_1,
+        acteurRole: 'organisateur',
+        action: 'event.create',
         cibleType: 'evenement',
       });
       await audit.record({
-        tenantId: T_C, acteurRole: 'proprietaire',
-        action: 'tenant.create', cibleType: 'tenant',
+        tenantId: T_C,
+        acteurRole: 'proprietaire',
+        action: 'tenant.create',
+        cibleType: 'tenant',
       });
       return audit;
     }
@@ -310,8 +409,10 @@ describe('T3.8 — journal d’audit', () => {
       // Mesure directe : on dépasse réellement le plafond. Avec 4 entrées
       // aucune limite ne se distingue, donc on en insère 1002.
       const audit = new AuditService(admin);
-      const valeurs = Array.from({ length: 1002 }, (_, i) =>
-        sql`(${T_A}, ${U_1}, 'organisateur', ${`event.update.${i}`}, 'evenement')`,
+      const valeurs = Array.from(
+        { length: 1002 },
+        (_, i) =>
+          sql`(${T_A}, ${U_1}, 'organisateur', ${`event.update.${i}`}, 'evenement')`,
       );
       await sql`
         insert into journal_audit
@@ -348,9 +449,46 @@ describe('T3.7 — puits de permissions', () => {
     expect(r.obsoleted).toHaveLength(0);
   });
 
+  it('RÉGRESSION : un code SANS POINT reçoit un libellé et un domaine non vides', async () => {
+    // TROUVÉ PAR LE LINTER (no-unnecessary-condition) : `rest.join('.')` rend
+    // toujours une chaîne, donc `''` pour « ping ». Le repli `?? code` ne se
+    // déclenchait jamais — `''` n'est pas nullish — et le libellé partait VIDE
+    // en base. Un catalogue avec des libellés vides est illisible dans l'écran
+    // d'administration des rôles.
+    const sink = new PermissionSink(admin);
+    await sink.sync({ permissions: [{ key: 'ping' }] });
+
+    const r = await sql<{ libelle: string; domaine: string }>`
+      select libelle, domaine from permission where code = 'ping'
+    `.execute(admin);
+
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].libelle).not.toBe('');
+    expect(r.rows[0].libelle).toBe('ping');
+    expect(r.rows[0].domaine).toBe('ping');
+  });
+
+  it('un code vide ne produit ni libellé ni domaine vide', async () => {
+    // Cas limite du cas limite : `''.split('.')` rend `['']`.
+    const sink = new PermissionSink(admin);
+    await sink.sync({ permissions: [{ key: '' }] });
+
+    const r = await sql<{ libelle: string; domaine: string }>`
+      select libelle, domaine from permission where code = ''
+    `.execute(admin);
+
+    expect(r.rows).toHaveLength(1);
+    // Le domaine retombe sur « general » ; le libellé reste vide car le code
+    // l'est — mais rien n'est `null`, donc rien ne casse l'affichage.
+    expect(r.rows[0].domaine).toBe('general');
+    expect(r.rows[0].libelle).not.toBeNull();
+  });
+
   it('MARQUE OBSOLÈTE une permission disparue, sans la supprimer', async () => {
     const sink = new PermissionSink(admin);
-    await sink.sync({ permissions: [{ key: 'event.create' }, { key: 'event.legacy' }] });
+    await sink.sync({
+      permissions: [{ key: 'event.create' }, { key: 'event.legacy' }],
+    });
 
     const { logger, logs } = mkLogger();
     const r = await new PermissionSink(admin, logger).sync({
@@ -376,7 +514,9 @@ describe('T3.7 — puits de permissions', () => {
     await sql`alter table role_permission no force row level security`.execute(admin);
     const roles = new RoleService(admin);
     await roles.createTenantRole(T_A, {
-      code: 'legacy_role', libelle: 'Legacy', permissions: ['event.legacy'],
+      code: 'legacy_role',
+      libelle: 'Legacy',
+      permissions: ['event.legacy'],
     });
     await sql`alter table role force row level security`.execute(admin);
     await sql`alter table role_permission force row level security`.execute(admin);
@@ -417,7 +557,9 @@ describe('T3.7 — puits de permissions', () => {
     await sql`alter table role no force row level security`.execute(admin);
     await sql`alter table role_permission no force row level security`.execute(admin);
     await new RoleService(admin).createTenantRole(T_A, {
-      code: 'r1', libelle: 'R1', permissions: ['event.old'],
+      code: 'r1',
+      libelle: 'R1',
+      permissions: ['event.old'],
     });
     await sql`alter table role force row level security`.execute(admin);
     await sql`alter table role_permission force row level security`.execute(admin);

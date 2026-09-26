@@ -95,18 +95,33 @@ export class AuditService {
    * suppression ou une altération casse la correspondance.
    */
   async verifyChain(tenantId: string): Promise<ChainVerification> {
+    /**
+     * L'empreinte est RECALCULÉE PAR POSTGRESQL, avec la formule exacte du
+     * trigger `chaine_audit()` — `horodatage::text`, et non un format ISO
+     * produit côté JavaScript.
+     *
+     * DÉFAUT CORRIGÉ : la version précédente calculait l'empreinte attendue
+     * puis ne l'utilisait jamais (le linter a signalé la variable morte). Elle
+     * ne comparait que `empreinte_precedente`, donc elle détectait la
+     * SUPPRESSION d'une entrée mais pas la FALSIFICATION de son contenu —
+     * exactement ce que son message d'erreur promettait de détecter. Au
+     * passage, le format d'horodatage divergeait aussi : la comparaison aurait
+     * échoué en permanence si elle avait existé.
+     */
     const rows = await sql<{
       id: string;
-      horodatage: Date;
-      action: string;
-      cible_type: string;
-      cible_id: string | null;
-      acteur_id: string | null;
       empreinte: Buffer;
       empreinte_precedente: Buffer | null;
+      recalculee: Buffer;
     }>`
-      select id, horodatage, action, cible_type, cible_id, acteur_id,
-             empreinte, empreinte_precedente
+      select id, empreinte, empreinte_precedente,
+             digest(
+               coalesce(encode(empreinte_precedente, 'hex'), '') ||
+               horodatage::text || action || cible_type ||
+               coalesce(cible_id::text, '') ||
+               coalesce(acteur_id::text, 'system'),
+               'sha256'
+             ) as recalculee
       from journal_audit
       where tenant_id = ${tenantId}
       order by id
@@ -115,31 +130,43 @@ export class AuditService {
     let previous: Buffer | null = null;
 
     for (const row of rows.rows) {
-      const expected = await sql<{ h: Buffer }>`
-        select digest(
-          ${previous ? previous.toString('hex') : ''} ||
-          ${row.horodatage.toISOString()} || ${row.action} ||
-          ${row.cible_type} || ${row.cible_id ?? ''} ||
-          ${row.acteur_id ?? 'system'},
-          'sha256'
-        ) as h
-      `.execute(this.db);
-
-      // Le chaînage attendu doit correspondre à ce qui est stocké.
+      // Deux vérifications indépendantes, et il faut les DEUX :
+      //   1. le chaînage — une entrée retirée décale les liens ;
+      //   2. l'empreinte de l'entrée — un contenu modifié ne correspond plus.
       const storedPrev = row.empreinte_precedente?.toString('hex') ?? '';
       const expectedPrev = previous?.toString('hex') ?? '';
+      const stored = row.empreinte.toString('hex');
+      const recalculated = row.recalculee.toString('hex');
 
-      if (storedPrev !== expectedPrev) {
-        const broken = {
-          id: row.id,
-          expected: expectedPrev.slice(0, 16),
-          found: storedPrev.slice(0, 16),
-        };
+      const chainageRompu = storedPrev !== expectedPrev;
+      const contenuFalsifie = stored !== recalculated;
+
+      if (chainageRompu || contenuFalsifie) {
+        const broken = chainageRompu
+          ? {
+              id: row.id,
+              expected: expectedPrev.slice(0, 16),
+              found: storedPrev.slice(0, 16),
+            }
+          : {
+              id: row.id,
+              expected: recalculated.slice(0, 16),
+              found: stored.slice(0, 16),
+            };
+        // Nommer le DIAGNOSTIC, pas seulement le symptôme : chercher une
+        // suppression quand le contenu a été modifié fait perdre du temps au
+        // moment où il en manque le plus.
+        const diagnostic = chainageRompu
+          ? `le chaînage ne correspond plus — une entrée a été SUPPRIMÉE ou ` +
+            `insérée hors de l'application`
+          : `l'empreinte de cette entrée ne correspond plus à son contenu — ` +
+            `elle a été MODIFIÉE hors de l'application`;
+
         this.logger?.error(
           `Chaîne d'audit ROMPUE à l'entrée ${row.id} du tenant ` +
-            `${tenantId.slice(0, 8)}… : une entrée a été supprimée ou ` +
-            `modifiée hors de l'application. Le journal n'est plus ` +
-            `opposable. Conservez une copie de la base avant toute action.`,
+            `${tenantId.slice(0, 8)}… : ${diagnostic}. Le journal n'est plus ` +
+            `opposable. Conservez une copie de la base avant toute action, ` +
+            `puis identifiez qui détenait un accès direct à PostgreSQL.`,
         );
         return { valid: false, checked: rows.rows.length, brokenAt: broken };
       }
