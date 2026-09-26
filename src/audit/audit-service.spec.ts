@@ -674,3 +674,31 @@ describe('chaîne : le contenu ENTIER est couvert', () => {
     expect((await new AuditService(admin).verifyChain(T_A)).valid).toBe(false);
   });
 });
+
+describe('chaîne : indépendante du fuseau de la session', () => {
+  it('écrite en UTC, vérifiée depuis Asia/Tokyo : VALIDE', async () => {
+    // Trouvé en revue : `horodatage::text` dépend du paramètre TimeZone. Une
+    // vérification depuis un autre fuseau concluait à une falsification.
+    await admin.transaction().execute(async (trx) => {
+      await sql`set local timezone = 'UTC'`.execute(trx);
+      const s = new AuditService(trx);
+      await s.record({
+        tenantId: T_A,
+        acteurRole: 'x',
+        action: 'fuseau.un',
+        cibleType: 't',
+      });
+      await s.record({
+        tenantId: T_A,
+        acteurRole: 'x',
+        action: 'fuseau.deux',
+        cibleType: 't',
+      });
+    });
+    const v = await admin.transaction().execute(async (trx) => {
+      await sql`set local timezone = 'Asia/Tokyo'`.execute(trx);
+      return new AuditService(trx).verifyChain(T_A);
+    });
+    expect(v).toEqual({ valid: true, checked: 2 });
+  });
+});

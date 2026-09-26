@@ -14,8 +14,9 @@ import { type Kysely, sql } from 'kysely';
  *    elle couvre désormais rôle, ressource, motif, avant et après. Avant, un
  *    motif réécrit en base passait la vérification.
  *
- * `stable` et non `immutable` : `horodatage::text` dépend du paramètre
- * `TimeZone` de la session.
+ * 4. L'horodatage entre dans l'empreinte en UTC, format fixe : `horodatage::text`
+ *    dépendait du paramètre `TimeZone` de la session, et une vérification lancée
+ *    depuis un autre fuseau concluait à une falsification (trouvé en revue).
  *
  * NB : pas d'apostrophe dans le SQL ci-dessous (littéral de template).
  */
@@ -25,7 +26,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     returns bytea language sql stable set search_path = public, pg_temp
     as $$
       select digest(
-        coalesce(encode(p_prec, 'hex'), '') || j.horodatage::text || j.action ||
+        coalesce(encode(p_prec, 'hex'), '') ||
+        to_char(j.horodatage at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || j.action ||
         j.cible_type || coalesce(j.cible_id::text, '') ||
         coalesce(j.acteur_id::text, 'system') || j.acteur_role ||
         coalesce(j.ressource_id::text, '') || coalesce(j.motif, '') ||
