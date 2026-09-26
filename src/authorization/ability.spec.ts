@@ -52,7 +52,7 @@ beforeAll(async () => {
     password: 'probe',
   });
   await c.connect();
-  await c.query(`drop database if exists ${DB}`);
+  await c.query(`drop database if exists ${DB} with (force)`);
   await c.query(`create database ${DB}`);
   await c.end();
 
@@ -70,7 +70,7 @@ afterAll(async () => {
     password: 'probe',
   });
   await c.connect();
-  await c.query(`drop database if exists ${DB}`);
+  await c.query(`drop database if exists ${DB} with (force)`);
   await c.end();
 });
 
@@ -193,6 +193,71 @@ describe('T3.9 — construction des règles', () => {
     );
   });
 
+  describe('portée PAR APPARTENANCE (grants)', () => {
+    const cible = (id: string, type = 'event') =>
+      ({ id, __caslSubjectType__: type }) as never;
+
+    it('propriétaire ET juré sur E1 : garde event.update PARTOUT', () => {
+      // LE cas des jurés nommés parmi les membres : avec le calcul global, la
+      // portée de juré restreignait aussi les droits de propriétaire.
+      const a = buildAbility({
+        tenantId: T_A,
+        userId: U_ORGA,
+        permissions: ['event.update', 'score.read.own'],
+        scopedResourceIds: [EV_1],
+        grants: [
+          { code: 'event.update', portee: null },
+          { code: 'score.read.own', portee: EV_1 },
+        ],
+      });
+      expect(a.can('update', cible(EV_2))).toBe(true);
+    });
+
+    it('organisateur sur E1 seulement : E2 refusé (inchangé)', () => {
+      const a = buildAbility({
+        tenantId: T_A,
+        userId: U_ORGA,
+        permissions: ['event.update'],
+        scopedResourceIds: [EV_1],
+        grants: [{ code: 'event.update', portee: EV_1 }],
+      });
+      expect(a.can('update', cible(EV_1))).toBe(true);
+      expect(a.can('update', cible(EV_2))).toBe(false);
+    });
+
+    it('même permission via deux rôles à portée : l’union des portées, rien de plus', () => {
+      const EV_3 = 'e1111111-0000-0000-0000-000000000003';
+      const a = buildAbility({
+        tenantId: T_A,
+        userId: U_ORGA,
+        permissions: ['event.update'],
+        scopedResourceIds: [EV_1, EV_2],
+        grants: [
+          { code: 'event.update', portee: EV_1 },
+          { code: 'event.update', portee: EV_2 },
+        ],
+      });
+      expect(a.can('update', cible(EV_1))).toBe(true);
+      expect(a.can('update', cible(EV_2))).toBe(true);
+      expect(a.can('update', cible(EV_3))).toBe(false);
+    });
+
+    it('une permission SANS portée n’élargit pas une AUTRE permission à portée', () => {
+      const a = buildAbility({
+        tenantId: T_A,
+        userId: U_ORGA,
+        permissions: ['audit.read', 'event.update'],
+        scopedResourceIds: [EV_1],
+        grants: [
+          { code: 'audit.read', portee: null },
+          { code: 'event.update', portee: EV_1 },
+        ],
+      });
+      expect(a.can('read', cible(EV_2, 'audit'))).toBe(true);
+      expect(a.can('update', cible(EV_2))).toBe(false);
+    });
+  });
+
   it('aucune permission : tout est refusé', () => {
     const a = buildAbility({
       tenantId: T_A,
@@ -220,6 +285,13 @@ describe('T3.9 — chargement depuis la base', () => {
     const ctx = await loadAbilityContext(admin, T_A, U_JURE1);
     expect(ctx.permissions.sort()).toEqual(['score.create', 'score.read.own']);
     expect(ctx.scopedResourceIds).toEqual([EV_1]);
+  });
+
+  it('rend les grants, portée comprise', async () => {
+    const ctx = await loadAbilityContext(admin, T_A, U_JURE1);
+    expect(ctx.grants).toEqual(
+      expect.arrayContaining([{ code: 'score.read.own', portee: EV_1 }]),
+    );
   });
 
   it("charge celles d'un organisateur", async () => {

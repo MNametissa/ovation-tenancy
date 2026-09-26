@@ -31,6 +31,14 @@ export interface AbilityContext {
   permissions: string[];
   /** Ressources sur lesquelles l'utilisateur a une portée. */
   scopedResourceIds: string[];
+  /**
+   * Chaque permission AVEC la portée de l'appartenance qui l'accorde.
+   * Présent : fait foi. Absent : repli sur `scopedResourceIds` (historique).
+   *
+   * Sans lui, une seule portée restreignait TOUTES les permissions : un
+   * propriétaire nommé juré sur un évènement perdait ses droits sur les autres.
+   */
+  grants?: Array<{ code: string; portee: string | null }>;
 }
 
 /**
@@ -43,13 +51,14 @@ export interface AbilityContext {
  *   score.read.all  → can('read', 'score')            (sans condition)
  *   event.publish   → can('publish', 'event')
  *
- * Et un rôle à portée ne peut agir que sur ses ressources :
+ * Et une permission accordée par une appartenance à portée ne vaut que sur ses
+ * ressources — PAR APPARTENANCE, pas pour tout l'utilisateur :
  *
  *   event.update + portée sur E1 → can('update', 'event', { id: { $in: [E1] } })
+ *   … sauf si une AUTRE appartenance, sans portée, accorde aussi event.update.
  */
 export function buildAbility(ctx: AbilityContext): AppAbility {
   const { can, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
-  const scoped = ctx.scopedResourceIds.length > 0;
 
   for (const code of ctx.permissions) {
     const parts = code.split('.');
@@ -76,15 +85,26 @@ export function buildAbility(ctx: AbilityContext): AppAbility {
       continue;
     }
 
-    // Permission simple : limitée à la portée si le rôle en a une.
-    if (scoped) {
-      can(action, resource, { id: { $in: ctx.scopedResourceIds } } as never);
-    } else {
+    // Permission simple : limitée à la portée DES APPARTENANCES QUI L'ACCORDENT.
+    const portees = porteesDe(ctx, code);
+    if (portees === 'partout') {
       can(action, resource);
+    } else {
+      can(action, resource, { id: { $in: portees } } as never);
     }
   }
 
   return build();
+}
+
+/** `partout` si une appartenance SANS portée accorde ce code ; sinon ses portées. */
+function porteesDe(ctx: AbilityContext, code: string): 'partout' | string[] {
+  if (!ctx.grants) {
+    return ctx.scopedResourceIds.length > 0 ? ctx.scopedResourceIds : 'partout';
+  }
+  const g = ctx.grants.filter((x) => x.code === code);
+  if (g.some((x) => x.portee === null)) return 'partout';
+  return [...new Set(g.map((x) => x.portee as string))];
 }
 
 /**
@@ -122,7 +142,9 @@ export async function loadAbilityContext(
     );
   }
 
-  return { tenantId, userId, permissions, scopedResourceIds };
+  const grants = rows.rows.map((r) => ({ code: r.code, portee: r.portee }));
+
+  return { tenantId, userId, permissions, scopedResourceIds, grants };
 }
 
 /**
