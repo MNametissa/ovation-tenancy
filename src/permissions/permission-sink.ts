@@ -65,15 +65,20 @@ export class PermissionSink {
 
     // ── Insertions et réveils ────────────────────────────────────────────
     for (const [code, p] of discovered) {
-      const [resource, ...rest] = code.split('.');
-      const action = rest.join('.');
+      // MESURÉ : `rest.join('.')` rend TOUJOURS une chaîne — `''` pour un code
+      // sans point comme « ping ». Un `?? code` ne se déclenchait donc jamais
+      // ('' n'est pas nullish) et le libellé partait VIDE en base. D'où `||`,
+      // qui traite la chaîne vide, et un repli calculé une seule fois.
+      const [premier, ...rest] = code.split('.');
+      const resource = premier || 'general';
+      const action = rest.join('.') || code;
 
       if (!known.has(code)) {
         await sql`
           insert into permission (code, libelle, description, domaine, source)
-          values (${code}, ${p.action ?? action ?? code},
+          values (${code}, ${p.action ?? action},
                   ${p.description ?? null},
-                  ${p.resource ?? resource ?? 'general'},
+                  ${p.resource ?? resource},
                   ${p.origin ?? 'convention'})
         `.execute(this.db);
         report.added.push(code);
@@ -84,8 +89,9 @@ export class PermissionSink {
         // Elle était obsolète et revient : on la réveille plutôt que d'en
         // créer une seconde, sinon les rôles qui y référaient restent
         // rattachés à la version morte.
-        await sql`update permission set obsolete_le = null where code = ${code}`
-          .execute(this.db);
+        await sql`update permission set obsolete_le = null where code = ${code}`.execute(
+          this.db,
+        );
         report.revived.push(code);
         this.logger?.log(
           `Permission « ${code} » réapparue dans le code : réactivée. ` +
@@ -96,9 +102,9 @@ export class PermissionSink {
 
       await sql`
         update permission
-        set libelle = ${p.action ?? action ?? code},
+        set libelle = ${p.action ?? action},
             description = ${p.description ?? null},
-            domaine = ${p.resource ?? resource ?? 'general'},
+            domaine = ${p.resource ?? resource},
             source = ${p.origin ?? 'convention'}
         where code = ${code}
       `.execute(this.db);
@@ -109,8 +115,9 @@ export class PermissionSink {
     for (const [code, obsoleteLe] of known) {
       if (discovered.has(code) || obsoleteLe !== null) continue;
 
-      await sql`update permission set obsolete_le = now() where code = ${code}`
-        .execute(this.db);
+      await sql`update permission set obsolete_le = now() where code = ${code}`.execute(
+        this.db,
+      );
       report.obsoleted.push(code);
 
       const used = await sql<{ n: number }>`
@@ -132,7 +139,9 @@ export class PermissionSink {
             `restaurez le garde qui l'appliquait.`,
         );
       } else {
-        this.logger?.log(`Permission « ${code} » marquée obsolète (aucun rôle ne l'utilise)`);
+        this.logger?.log(
+          `Permission « ${code} » marquée obsolète (aucun rôle ne l'utilise)`,
+        );
       }
     }
 
