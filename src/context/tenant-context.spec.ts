@@ -5,7 +5,15 @@
  * moyen d'attraper une fuite de variable de session, et elle n'apparaît
  * jamais en test séquentiel naïf.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  afterEach,
+} from '@jest/globals';
 import { Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ClsModule, ClsService } from 'nestjs-cls';
@@ -71,8 +79,11 @@ let runtime: Kysely<any>;
 
 beforeAll(async () => {
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
@@ -96,17 +107,24 @@ beforeAll(async () => {
   runtime = mkDb(DB, 'app_runtime', CREDENTIALS.runtime, 1);
 });
 
+// Timeout explicite : cette suite monte des modules NestJS complets, et le
+// `drop database` final attend la fermeture des pools. MESURÉ : seule elle
+// passe en 8,9 s, mais sous le parallélisme des 8 suites le crochet dépassait
+// les 5 s par défaut de Jest — 134 tests verts et une suite « failed to run ».
 afterAll(async () => {
   await runtime.destroy();
   await admin.destroy();
   const c = new Client({
-    host: '127.0.0.1', port: 55432, database: 'postgres',
-    user: 'postgres', password: 'probe',
+    host: '127.0.0.1',
+    port: 55432,
+    database: 'postgres',
+    user: 'postgres',
+    password: 'probe',
   });
   await c.connect();
   await c.query(`drop database if exists ${DB}`);
   await c.end();
-});
+}, 30_000);
 
 /** Pose le contexte à la main, comme le fera l'intercepteur. */
 async function withScope<T>(
@@ -115,7 +133,8 @@ async function withScope<T>(
   fn: (trx: Kysely<any>) => Promise<T>,
 ): Promise<T> {
   return runtime.transaction().execute(async (trx) => {
-    if (tenantId) await sql`select set_config('app.tenant', ${tenantId}, true)`.execute(trx);
+    if (tenantId)
+      await sql`select set_config('app.tenant', ${tenantId}, true)`.execute(trx);
     if (userId) await sql`select set_config('app.user', ${userId}, true)`.execute(trx);
     return fn(trx);
   });
@@ -269,7 +288,9 @@ describe('CLS — propagation du contexte', () => {
  * garantie mesurée sur le code qui l'utilise.
  */
 describe('TenantContext — la classe', () => {
-  let moduleRef: Awaited<ReturnType<ReturnType<typeof Test.createTestingModule>['compile']>>;
+  let moduleRef: Awaited<
+    ReturnType<ReturnType<typeof Test.createTestingModule>['compile']>
+  >;
   let ctx: TenantContext;
   let logs: ReturnType<typeof mkLogger>;
 
@@ -290,10 +311,7 @@ describe('TenantContext — la classe', () => {
           ],
         }),
       ],
-      providers: [
-        { provide: TENANCY_LOGGER, useValue: logs.logger },
-        TenantContext,
-      ],
+      providers: [{ provide: TENANCY_LOGGER, useValue: logs.logger }, TenantContext],
     }).compile();
     await moduleRef.init();
     ctx = moduleRef.get(TenantContext);
