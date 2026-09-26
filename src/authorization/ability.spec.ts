@@ -193,6 +193,23 @@ describe('T3.9 — construction des règles', () => {
     );
   });
 
+  it('« x.manage » n’accorde PAS les autres actions — le joker CASL est neutralisé', () => {
+    // MESURÉ : `can('manage', 'member')` accordait aussi invite et read.
+    const a = buildAbility({
+      tenantId: T_A,
+      userId: U_ORGA,
+      permissions: ['member.manage'],
+      scopedResourceIds: [],
+    });
+    const membre = { id: T_A, __caslSubjectType__: 'member' } as never;
+    expect(() => assertCan(a, 'manage', 'member', membre as never)).not.toThrow();
+    expect(a.can('invite', membre)).toBe(false);
+    expect(a.can('read', membre)).toBe(false);
+    expect(() => assertCan(a, 'invite', 'member')).toThrow(
+      /aucune permission « member.invite »/,
+    );
+  });
+
   describe('portée PAR APPARTENANCE (grants)', () => {
     const cible = (id: string, type = 'event') =>
       ({ id, __caslSubjectType__: type }) as never;

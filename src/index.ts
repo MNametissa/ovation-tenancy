@@ -50,6 +50,7 @@ export {
 
 export {
   buildAbility,
+  actionCasl,
   loadAbilityContext,
   assertCan,
   ForbiddenError,

@@ -57,6 +57,19 @@ export interface AbilityContext {
  *   event.update + portée sur E1 → can('update', 'event', { id: { $in: [E1] } })
  *   … sauf si une AUTRE appartenance, sans portée, accorde aussi event.update.
  */
+/**
+ * `manage` est le JOKER de CASL : `can('manage', 'member')` accorde TOUTES les
+ * actions sur `member`. Nos codes l'emploient comme une action ORDINAIRE
+ * (`member.manage`, `role.manage`…). MESURÉ en phase 4-bis : `member.manage`
+ * accordait donc aussi `member.invite` et `member.read` côté CASL.
+ *
+ * L'action est traduite à l'entrée ET à la vérification : les appelants
+ * continuent d'écrire `manage`, CASL ne voit jamais son joker.
+ */
+export function actionCasl(action: string): string {
+  return action === 'manage' ? 'gerer' : action;
+}
+
 export function buildAbility(ctx: AbilityContext): AppAbility {
   const { can, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
 
@@ -76,21 +89,21 @@ export function buildAbility(ctx: AbilityContext): AppAbility {
     if (modifier === 'own') {
       // Ne voit que ce qui lui appartient. La RLS l'impose déjà côté base ;
       // CASL le dit côté application, pour produire un 403 explicite.
-      can(action, resource, { ownerId: ctx.userId } as never);
+      can(actionCasl(action), resource, { ownerId: ctx.userId } as never);
       continue;
     }
 
     if (modifier === 'all') {
-      can(action, resource);
+      can(actionCasl(action), resource);
       continue;
     }
 
     // Permission simple : limitée à la portée DES APPARTENANCES QUI L'ACCORDENT.
     const portees = porteesDe(ctx, code);
     if (portees === 'partout') {
-      can(action, resource);
+      can(actionCasl(action), resource);
     } else {
-      can(action, resource, { id: { $in: portees } } as never);
+      can(actionCasl(action), resource, { id: { $in: portees } } as never);
     }
   }
 
@@ -190,12 +203,12 @@ export function assertCan(
   resource?: Record<string, unknown>,
 ): void {
   const target = resource ? { ...resource, __caslSubjectType__: subject } : subject;
-  if (ability.can(action, target as never)) return;
+  if (ability.can(actionCasl(action), target as never)) return;
 
   // Distinguer « aucune permission » de « permission mais hors portée » :
   // les deux se corrigent très différemment.
   const hasAnyRule = ability.rules.some(
-    (r) => r.subject === subject && (r.action === action || r.action === 'manage'),
+    (r) => r.subject === subject && r.action === actionCasl(action),
   );
 
   const reason = hasAnyRule
