@@ -33,6 +33,10 @@ export default {
     // le harnais d'intégration e2e/, pas par des mocks de système de fichiers.
     '!**/cli/bin.ts',
   ],
+  // `json-summary` en plus du défaut : il produit coverage-summary.json, que la
+  // CI lit pour afficher un bilan lisible. Sans lui, le pourcentage n'existe que
+  // dans la sortie texte, donc il n'est pas exploitable par un script.
+  coverageReporters: ['text', 'lcov', 'json-summary'],
   coverageDirectory: '../coverage',
   coverageThreshold: {
     global: { branches: 75, functions: 85, lines: 85, statements: 85 },
