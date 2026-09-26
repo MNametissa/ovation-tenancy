@@ -5,6 +5,7 @@ import * as m001 from './001-roles.js';
 import * as m002 from './002-tables.js';
 import * as m003 from './003-functions.js';
 import * as m004 from './004-rls.js';
+import * as m005 from './005-audit-chaine.js';
 import type { RoleCredentials } from './001-roles.js';
 
 /**
@@ -49,6 +50,11 @@ export const MIGRATIONS: Migration[] = [
   { name: '002-tables', up: (db) => m002.up(db), down: (db) => m002.down(db) },
   { name: '003-functions', up: (db) => m003.up(db), down: (db) => m003.down(db) },
   { name: '004-rls', up: (db) => m004.up(db), down: (db) => m004.down(db) },
+  {
+    name: '005-audit-chaine',
+    up: (db) => m005.up(db),
+    down: (db) => m005.down(db),
+  },
 ];
 
 export interface RunOptions {

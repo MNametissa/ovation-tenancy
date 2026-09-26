@@ -115,13 +115,9 @@ export class AuditService {
       recalculee: Buffer;
     }>`
       select id, empreinte, empreinte_precedente,
-             digest(
-               coalesce(encode(empreinte_precedente, 'hex'), '') ||
-               horodatage::text || action || cible_type ||
-               coalesce(cible_id::text, '') ||
-               coalesce(acteur_id::text, 'system'),
-               'sha256'
-             ) as recalculee
+             -- LA formule du trigger, et non une copie : une copie divergeait
+             -- déjà une fois (format d'horodatage), faussant toute vérification.
+             app_empreinte_audit(empreinte_precedente, journal_audit) as recalculee
       from journal_audit
       where tenant_id = ${tenantId}
       order by id
