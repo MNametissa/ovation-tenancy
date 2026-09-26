@@ -86,7 +86,7 @@ beforeAll(async () => {
     password: 'probe',
   });
   await c.connect();
-  await c.query(`drop database if exists ${DB}`);
+  await c.query(`drop database if exists ${DB} with (force)`);
   await c.query(`create database ${DB}`);
   await c.end();
 
@@ -122,7 +122,7 @@ afterAll(async () => {
     password: 'probe',
   });
   await c.connect();
-  await c.query(`drop database if exists ${DB}`);
+  await c.query(`drop database if exists ${DB} with (force)`);
   await c.end();
 }, 30_000);
 

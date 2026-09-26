@@ -11,6 +11,11 @@ export default {
   // `globalSetup`, et la migration 001 tolère la course. Le parallélisme est
   // donc rétabli.
   globalSetup: '<rootDir>/test-globals.ts',
+  // Les crochets créent et suppriment une base PostgreSQL. Sous `test:par`, les
+  // trois espaces de travail partagent le serveur : un `afterAll` a dépassé les
+  // 5 s par défaut de jest (mesuré dans `verify`, deux fois). 30 s couvrent la
+  // charge sans masquer un vrai blocage.
+  testTimeout: 30_000,
   testRegex: '\\.spec\\.ts$',
   extensionsToTreatAsEsm: ['.ts'],
   // NestJS 12 is ESM-only ("type": "module", no CJS build), so the test runner

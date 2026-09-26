@@ -59,7 +59,7 @@ beforeAll(async () => {
     password: 'probe',
   });
   await admin.connect();
-  await admin.query(`drop database if exists ${DB}`);
+  await admin.query(`drop database if exists ${DB} with (force)`);
   await admin.query(`create database ${DB}`);
   await admin.end();
   db = mkDb(DB);
@@ -75,7 +75,7 @@ afterAll(async () => {
     password: 'probe',
   });
   await admin.connect();
-  await admin.query(`drop database if exists ${DB}`);
+  await admin.query(`drop database if exists ${DB} with (force)`);
   await admin.end();
 });
 
