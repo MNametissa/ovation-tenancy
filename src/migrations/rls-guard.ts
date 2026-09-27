@@ -145,10 +145,9 @@ export async function assertRoleIsSafe(
     from pg_roles where rolname = current_user
   `.execute(db);
 
-  const row = r.rows[0];
   // Voir `guards.ts` : `rows[0]` est typé non-nullable alors qu'une requête
-  // peut ne rien rendre. Le garde protège un cas réel que le type nie.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  // peut ne rien rendre ; `at(0)` rend le type honnête.
+  const row = r.rows.at(0);
   if (!row) return false;
 
   const problems: string[] = [];

@@ -43,7 +43,9 @@ export default {
   // dans la sortie texte, donc il n'est pas exploitable par un script.
   coverageReporters: ['text', 'lcov', 'json-summary'],
   coverageDirectory: '../coverage',
+  // L6-7 : un point environ sous la mesure (2026-09-27 : instructions 97,4 ·
+  // branches 89,93 · fonctions 100 · lignes 98,01).
   coverageThreshold: {
-    global: { branches: 75, functions: 85, lines: 85, statements: 85 },
+    global: { branches: 88, functions: 99, lines: 97, statements: 96 },
   },
 };

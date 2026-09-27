@@ -41,11 +41,15 @@ export interface TenancyLogger {
   debug(message: string): void;
 }
 
+/**
+ * `Partial` : un logger maison incomplet est toléré (voir la spec) ; un niveau
+ * absent perd le message sans faire tomber l'appelant.
+ */
 export function createLogger(
-  custom?: LoggerService,
+  custom?: Partial<LoggerService>,
   context = 'Tenancy',
 ): TenancyLogger {
-  const nest = custom ?? new Logger(context);
+  const nest: Partial<LoggerService> = custom ?? new Logger(context);
   return {
     error: (m, t) => nest.error?.(m, t),
     warn: (m) => nest.warn?.(m),

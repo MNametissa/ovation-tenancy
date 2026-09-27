@@ -201,7 +201,7 @@ describe('T3.9 — construction des règles', () => {
       scopedResourceIds: [],
     });
     const membre = { id: T_A, __caslSubjectType__: 'member' } as never;
-    expect(() => assertCan(a, 'manage', 'member', membre as never)).not.toThrow();
+    expect(() => assertCan(a, 'manage', 'member', membre)).not.toThrow();
     expect(a.can('invite', membre)).toBe(false);
     expect(a.can('read', membre)).toBe(false);
     expect(() => assertCan(a, 'invite', 'member')).toThrow(

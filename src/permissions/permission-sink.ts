@@ -29,7 +29,7 @@ export interface DiscoveredCatalog {
 }
 
 export interface SyncReport {
-  /** Nouvelles permissions insérées. */
+  /** Nouvelles permissions insérées par CET appel (pas par une instance concurrente). */
   added: string[];
   /** Permissions déjà présentes, métadonnées rafraîchies. */
   updated: string[];
@@ -74,14 +74,20 @@ export class PermissionSink {
       const action = rest.join('.') || code;
 
       if (!known.has(code)) {
-        await sql`
+        // `on conflict do nothing` (L6-3) : plusieurs instances qui démarrent
+        // ensemble lisent le même état, puis insèrent les mêmes codes. MESURÉ :
+        // 5 instances sur 6 échouaient en 23505 et ne démarraient pas. Le code
+        // n'est « ajouté » que par l'instance dont l'insertion a pris.
+        const inseree = await sql<{ code: string }>`
           insert into permission (code, libelle, description, domaine, source)
           values (${code}, ${p.action ?? action},
                   ${p.description ?? null},
                   ${p.resource ?? resource},
                   ${p.origin ?? 'convention'})
+          on conflict (code) do nothing
+          returning code
         `.execute(this.db);
-        report.added.push(code);
+        if (inseree.rows.length > 0) report.added.push(code);
         continue;
       }
 

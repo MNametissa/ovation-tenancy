@@ -22,7 +22,7 @@ function mkSpy() {
 describe('createLogger', () => {
   it('délègue les quatre niveaux au logger fourni', () => {
     const spy = mkSpy();
-    const logger = createLogger(spy as unknown as LoggerService);
+    const logger = createLogger(spy);
 
     logger.error('boum', 'trace');
     logger.warn('attention');
