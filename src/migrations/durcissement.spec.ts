@@ -108,6 +108,21 @@ describe('L1-8 — mot de passe d’un rôle EXISTANT', () => {
     const r = await sql<{ u: string }>`select current_user as u`.execute(runtime);
     expect(r.rows[0].u).toBe('app_runtime');
   });
+
+  // TROUVÉ par la recette L1 : sur une base DÉJÀ migrée (001 enregistrée),
+  // l'option ne réécrivait rien — la 001 était sautée. Une rotation de mots de
+  // passe sur une base en service échouait en silence.
+  it('le réécrit sur option même quand la 001 est DÉJÀ appliquée', async () => {
+    const avant = await empreinte('app_runtime');
+    const avantAuth = await empreinte('app_auth');
+    await runMigrations(admin, {
+      credentials: TEST_CREDENTIALS,
+      verify: false,
+      realignerMotsDePasse: true,
+    });
+    expect(await empreinte('app_runtime')).not.toBe(avant);
+    expect(await empreinte('app_auth')).not.toBe(avantAuth);
+  });
 });
 
 describe('L1-4 — droits d’app_runtime sur le catalogue global', () => {

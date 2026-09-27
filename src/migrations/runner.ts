@@ -42,6 +42,11 @@ export interface Migration {
    * moitié appliqué de façon dangereuse.
    */
   outsideTransaction?: boolean;
+  /**
+   * Pose les rôles PostgreSQL : rejouée, même déjà appliquée, quand le
+   * réalignement des mots de passe est demandé. Doit être idempotente.
+   */
+  rejoueeAuRealignement?: boolean;
 }
 
 /** Migrations exportées EN TABLEAU, pas en glob : un glob casse selon pnpm,
@@ -49,7 +54,13 @@ export interface Migration {
 export const MIGRATIONS: Migration[] = [
   // Hors transaction : tolère les courses sur les rôles, qui sont globaux au
   // cluster. Ne touche ni aux tables ni à FORCE RLS.
-  { name: '001-roles', up: m001.up, down: m001.down, outsideTransaction: true },
+  {
+    name: '001-roles',
+    up: m001.up,
+    down: m001.down,
+    outsideTransaction: true,
+    rejoueeAuRealignement: true,
+  },
   { name: '002-tables', up: (db) => m002.up(db), down: (db) => m002.down(db) },
   { name: '003-functions', up: (db) => m003.up(db), down: (db) => m003.down(db) },
   { name: '004-rls', up: (db) => m004.up(db), down: (db) => m004.down(db) },
@@ -121,6 +132,14 @@ export async function runMigrations(
 
   for (const migration of MIGRATIONS) {
     if (done.has(migration.name)) {
+      // La rotation des mots de passe (option explicite) doit valoir aussi sur
+      // une base DÉJÀ migrée : la migration des rôles, idempotente, est alors
+      // rejouée — sans quoi l'option restait sans effet, en silence (recette L1).
+      if (realignerMotsDePasse && migration.rejoueeAuRealignement) {
+        logger?.log(`Migration « ${migration.name} » rejouée : réalignement demandé`);
+        await migration.up(db, credentials, logger, { realignerMotsDePasse });
+        continue;
+      }
       skipped.push(migration.name);
       logger?.debug(`Migration « ${migration.name} » déjà appliquée`);
       continue;
