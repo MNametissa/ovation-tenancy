@@ -51,18 +51,17 @@ function mkLogger() {
 }
 
 const T_A = '11111111-1111-1111-1111-111111111111';
+/** Propriétaire NON superuser, rôle de test créé par `test-globals.ts`. */
+const PROPRIETAIRE = 'test_proprietaire';
 let admin: Kysely<any>;
-let migration: Kysely<any>;
 
 beforeAll(async () => {
   admin = mkDb('postgres', 'probe');
-  migration = mkDb('app_migration', 'migration');
 });
 
 afterAll(async () => {
   await sql`drop table if exists guard_t cascade`.execute(admin).catch(() => {});
   await admin.destroy();
-  await migration.destroy();
 });
 
 beforeEach(async () => {
@@ -70,18 +69,17 @@ beforeEach(async () => {
   await sql`create table guard_t (id serial primary key, tenant_id uuid not null, v text)`.execute(
     admin,
   );
-  await sql`alter table guard_t owner to app_migration`.execute(admin);
+  await sql`alter table guard_t owner to ${sql.id(PROPRIETAIRE)}`.execute(admin);
   await sql`alter table guard_t enable row level security`.execute(admin);
   await sql`alter table guard_t force row level security`.execute(admin);
-  await sql`create policy base on guard_t for all to app_migration using (true) with check (true)`.execute(
-    admin,
-  );
+  await sql`create policy base on guard_t for all to ${sql.id(PROPRIETAIRE)}
+            using (true) with check (true)`.execute(admin);
   await sql`create policy iso on guard_t as restrictive
             using (tenant_id = (select nullif(current_setting('app.tenant', true),'')::uuid))
             with check (tenant_id = (select nullif(current_setting('app.tenant', true),'')::uuid))`.execute(
     admin,
   );
-  await sql`grant select, insert, update, delete on guard_t to app_migration`.execute(
+  await sql`grant select, insert, update, delete on guard_t to ${sql.id(PROPRIETAIRE)}`.execute(
     admin,
   );
 });

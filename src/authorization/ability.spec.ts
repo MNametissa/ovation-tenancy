@@ -20,7 +20,6 @@ const { Pool, Client } = pg;
 const DB = 'tenancy_casl_test';
 
 const CREDENTIALS = {
-  migration: 'test_migration_pwd',
   runtime: 'test_runtime_pwd',
   auth: 'test_auth_pwd',
 };
@@ -419,7 +418,8 @@ describe('T3.9 — LE test : deux barrières indépendantes', () => {
       jure_id uuid not null,
       total numeric(6,2)
     )`.execute(admin);
-    await sql`alter table note_jury owner to app_migration`.execute(admin);
+    // Propriétaire NON superuser (rôle de test, `test-globals.ts`).
+    await sql`alter table note_jury owner to test_proprietaire`.execute(admin);
     await sql`insert into note_jury (tenant_id, jure_id, total) values
       (${T_A}, ${U_JURE1}, 15.50), (${T_A}, ${U_JURE2}, 18.00)`.execute(admin);
 
@@ -462,7 +462,8 @@ describe('T3.9 — LE test : deux barrières indépendantes', () => {
       id uuid primary key default gen_random_uuid(),
       tenant_id uuid not null, jure_id uuid not null, total numeric(6,2)
     )`.execute(admin);
-    await sql`alter table note_jury owner to app_migration`.execute(admin);
+    // Propriétaire NON superuser (rôle de test, `test-globals.ts`).
+    await sql`alter table note_jury owner to test_proprietaire`.execute(admin);
     await sql`insert into note_jury (tenant_id, jure_id, total) values
       (${T_A}, ${U_JURE1}, 15.50), (${T_A}, ${U_JURE2}, 18.00)`.execute(admin);
     await sql`alter table note_jury enable row level security`.execute(admin);

@@ -69,7 +69,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     db,
   );
   await sql`grant execute on function app_empreinte_audit(bytea, journal_audit)
-            to app_runtime, app_migration`.execute(db);
+            to app_runtime`.execute(db);
 }
 
 /** Retour à la forme 003 : trigger à droits de l'appelant, formule courte. */

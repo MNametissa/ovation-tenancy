@@ -20,7 +20,6 @@ const DB = 'tenancy_test';
 // et refuse apostrophes et antislashs — vérifié par le describe
 // « validation des mots de passe de rôle ».
 const CREDENTIALS = {
-  migration: 'test_migration_pwd',
   runtime: 'test_runtime_pwd',
   auth: 'test_auth_pwd',
 };
@@ -127,7 +126,7 @@ describe('runMigrations', () => {
     expect(shared.rows[0].n).toBe(0);
   });
 
-  it('crée les quatre rôles, dont app_policy en BYPASSRLS', async () => {
+  it('crée les trois rôles, dont app_policy en BYPASSRLS', async () => {
     await runMigrations(db, { credentials: CREDENTIALS });
     const r = await sql<{
       rolname: string;
@@ -135,14 +134,13 @@ describe('runMigrations', () => {
       rolcanlogin: boolean;
     }>`
       select rolname, rolbypassrls, rolcanlogin from pg_roles
-      where rolname in ('app_migration','app_runtime','app_policy','app_auth')
+      where rolname in ('app_runtime','app_policy','app_auth')
       order by rolname
     `.execute(db);
 
     const byName = Object.fromEntries(r.rows.map((x) => [x.rolname, x]));
     expect(Object.keys(byName).sort()).toEqual([
       'app_auth',
-      'app_migration',
       'app_policy',
       'app_runtime',
     ]);
@@ -253,7 +251,7 @@ describe('validation des mots de passe de rôle', () => {
 
   it('refuse un ANTISLASH', async () => {
     await expect(
-      runMigrations(db, { credentials: { ...bons, migration: 'abcdefgh\\' } }),
+      runMigrations(db, { credentials: { ...bons, runtime: 'abcdefgh\\' } }),
     ).rejects.toThrow(/apostrophe ou un antislash/);
   });
 

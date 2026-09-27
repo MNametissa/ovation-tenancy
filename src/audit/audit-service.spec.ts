@@ -17,7 +17,6 @@ const { Pool, Client } = pg;
 const DB = 'tenancy_audit_test';
 
 const CREDENTIALS = {
-  migration: 'test_migration_pwd',
   runtime: 'test_runtime_pwd',
   auth: 'test_auth_pwd',
 };

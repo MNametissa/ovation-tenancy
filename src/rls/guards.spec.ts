@@ -16,7 +16,6 @@ const { Pool, Client } = pg;
 const DB = 'tenancy_rls_test';
 
 const CREDENTIALS = {
-  migration: 'test_migration_pwd',
   runtime: 'test_runtime_pwd',
   auth: 'test_auth_pwd',
 };
@@ -192,6 +191,78 @@ describe('auditRls — chaque anomalie créée délibérément', () => {
     );
     const a = await auditRls(db);
     expect(a.globalUniques.map((x) => x.constraint)).not.toContain('ref_scoped');
+  });
+});
+
+describe('auditRls strict (L1-3)', () => {
+  it('une base VIDE n’est PAS déclarée saine', async () => {
+    // La base de la suite, vidée (le `beforeEach` suivant la re-migre) : aucune
+    // table, donc aucune règle violée — et rien de prouvé.
+    await sql`drop schema public cascade`.execute(db);
+    await sql`create schema public`.execute(db);
+    await sql`grant usage on schema public to app_runtime`.execute(db);
+    const runtime = mkDb(DB, 'app_runtime', CREDENTIALS.runtime);
+    try {
+      const a = await auditRls(runtime);
+      expect(a.ok).toBe(false);
+      expect(a.missingMigrations.length).toBeGreaterThan(0);
+    } finally {
+      await runtime.destroy();
+    }
+  });
+
+  it('une migration attendue non appliquée est signalée', async () => {
+    await sql`delete from tenancy_migrations where name = '004-rls'`.execute(db);
+    const a = await auditRls(db);
+    expect(a.missingMigrations).toContain('004-rls');
+  });
+
+  it('une table attendue par l’hôte et absente est signalée', async () => {
+    const a = await auditRls(db, undefined, { tablesAttendues: ['evenement'] });
+    expect(a.missingMigrations).toContain('table evenement');
+  });
+
+  it('table à tenant_id sans RESTRICTIVE sur app.tenant : refusée', async () => {
+    await sql`create table fuite (id int primary key, tenant_id uuid not null)`.execute(
+      db,
+    );
+    await sql`alter table fuite enable row level security`.execute(db);
+    await sql`alter table fuite force row level security`.execute(db);
+    await sql`create policy base on fuite for all to app_runtime using (true) with check (true)`.execute(
+      db,
+    );
+    const { logger, errors } = mkLogger();
+    const a = await auditRls(db, logger);
+    expect(a.withoutTenantRestrictive).toContain('fuite');
+    expect(errors.some((e) => e.includes('fuite') && e.includes('app.tenant'))).toBe(
+      true,
+    );
+  });
+
+  it('une restrictive qui ne lit PAS app.tenant ne compte pas', async () => {
+    await sql`drop policy tenant_isolation on appartenance`.execute(db);
+    await sql`create policy tenant_isolation on appartenance as restrictive
+              using (true) with check (true)`.execute(db);
+    const a = await auditRls(db);
+    expect(a.withoutTenantRestrictive).toContain('appartenance');
+  });
+
+  it('table publique SANS RLS hors de la liste explicite : refusée', async () => {
+    await sql`create table oubliee (id int primary key, secret text)`.execute(db);
+    const a = await auditRls(db);
+    expect(a.unlistedPublicTables).toContain('oubliee');
+    const b = await auditRls(db, undefined, { tablesPubliques: ['oubliee'] });
+    expect(b.unlistedPublicTables).not.toContain('oubliee');
+  });
+
+  it('index UNIQUE (hors contrainte) sans tenant_id : lu dans pg_index', async () => {
+    await sql`alter table appartenance add column ref text`.execute(db);
+    await sql`create unique index ref_index_global on appartenance (ref)`.execute(db);
+    const a = await auditRls(db);
+    expect(a.globalUniques).toContainEqual({
+      table: 'appartenance',
+      constraint: 'ref_index_global',
+    });
   });
 });
 

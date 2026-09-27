@@ -40,7 +40,7 @@ export async function up(db: Kysely<any>): Promise<void> {
 
   await sql`alter function app_a_permission(text) owner to app_policy`.execute(db);
   await sql`revoke all on function app_a_permission(text) from public`.execute(db);
-  await sql`grant execute on function app_a_permission(text) to app_runtime, app_migration`.execute(
+  await sql`grant execute on function app_a_permission(text) to app_runtime`.execute(
     db,
   );
   await sql`grant select on appartenance, role_permission, permission to app_policy`.execute(

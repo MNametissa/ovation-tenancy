@@ -6,7 +6,9 @@ import * as m002 from './002-tables.js';
 import * as m003 from './003-functions.js';
 import * as m004 from './004-rls.js';
 import * as m005 from './005-audit-chaine.js';
-import type { RoleCredentials } from './001-roles.js';
+import * as m006 from './006-durcissement.js';
+import * as m007 from './007-audit-v2.js';
+import type { OptionsRoles, RoleCredentials } from './001-roles.js';
 
 /**
  * Exécuteur de migrations de la bibliothèque.
@@ -28,6 +30,7 @@ export interface Migration {
     db: Kysely<any>,
     credentials: RoleCredentials,
     logger?: TenancyLogger,
+    options?: Omit<OptionsRoles, 'logger'>,
   ): Promise<void>;
   down(db: Kysely<any>, logger?: TenancyLogger): Promise<void>;
   /**
@@ -55,6 +58,8 @@ export const MIGRATIONS: Migration[] = [
     up: (db) => m005.up(db),
     down: (db) => m005.down(db),
   },
+  { name: '006-durcissement', up: (db) => m006.up(db), down: (db) => m006.down(db) },
+  { name: '007-audit-v2', up: (db) => m007.up(db), down: (db) => m007.down(db) },
 ];
 
 export interface RunOptions {
@@ -62,6 +67,11 @@ export interface RunOptions {
   logger?: TenancyLogger;
   /** Vérifie l'état RLS après migration. Défaut : true. */
   verify?: boolean;
+  /**
+   * Réécrit le mot de passe des rôles EXISTANTS. Faux par défaut : les rôles
+   * sont globaux au cluster, et d'autres bases s'y connectent peut-être.
+   */
+  realignerMotsDePasse?: boolean;
 }
 
 export interface MigrationResult {
@@ -101,7 +111,7 @@ export async function runMigrations(
   db: Kysely<any>,
   opts: RunOptions,
 ): Promise<MigrationResult> {
-  const { credentials, logger, verify = true } = opts;
+  const { credentials, logger, verify = true, realignerMotsDePasse = false } = opts;
 
   await ensureTable(db);
   const done = await alreadyApplied(db);
@@ -130,7 +140,7 @@ export async function runMigrations(
         //
         // Sans risque ici : elle ne touche ni aux tables ni à FORCE RLS, donc
         // rien ne peut rester à moitié appliqué de façon dangereuse.
-        await migration.up(db, credentials, logger);
+        await migration.up(db, credentials, logger, { realignerMotsDePasse });
         await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`.execute(
           db,
         );

@@ -1,5 +1,26 @@
 import { type Kysely, sql } from 'kysely';
 import { MSG, type TenancyLogger } from '../logging.js';
+import { MIGRATIONS } from '../migrations/runner.js';
+
+/**
+ * Tables du socle VOLONTAIREMENT sans RLS dans `public` : catalogues globaux
+ * (`permission`, `utilisateur`), liaison lue sous la RLS de `role`
+ * (`role_permission`, gardée par trigger côté application), suivi des
+ * migrations. Toute autre table sans RLS est une anomalie.
+ */
+export const TABLES_PUBLIQUES_SOCLE = [
+  'permission',
+  'utilisateur',
+  'role_permission',
+  'tenancy_migrations',
+] as const;
+
+export interface OptionsAuditRls {
+  /** Tables de l'HÔTE volontairement sans RLS, en plus de celles du socle. */
+  tablesPubliques?: readonly string[];
+  /** Tables que les migrations de l'HÔTE doivent avoir créées. */
+  tablesAttendues?: readonly string[];
+}
 
 /**
  * Les six règles RLS, en garde-fous exécutables.
@@ -23,8 +44,90 @@ export interface RlsAudit {
   globalUniques: Array<{ table: string; constraint: string }>;
   /** Le rôle courant contourne-t-il la RLS ? */
   unsafeRole: string | null;
+  /** Tables à tenant_id sans RESTRICTIVE « for all » lisant `app.tenant`. */
+  withoutTenantRestrictive: string[];
+  /** Tables de `public` sans RLS, absentes de la liste explicite. */
+  unlistedPublicTables: string[];
+  /** Migrations du socle non appliquées, ou `table <nom>` attendue et absente. */
+  missingMigrations: string[];
   /** true si aucune anomalie. */
   ok: boolean;
+}
+
+/**
+ * Chaque table portant `tenant_id` doit avoir une RESTRICTIVE « for all » dont
+ * USING et WITH CHECK lisent `app.tenant`. Une permissive seule, ou une
+ * restrictive sans le tenant, laisse voir tous les tenants.
+ */
+async function checkTenantRestrictive(db: Kysely<any>): Promise<string[]> {
+  const r = await sql<{ relname: string }>`
+    select c.relname
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid and a.attname = 'tenant_id'
+                       and a.attnum > 0 and not a.attisdropped
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+      and not exists (
+        select 1 from pg_policy p
+        where p.polrelid = c.oid and not p.polpermissive and p.polcmd = '*'
+          and pg_get_expr(p.polqual, p.polrelid) like '%app.tenant%'
+          and pg_get_expr(p.polwithcheck, p.polrelid) like '%app.tenant%'
+      )
+    order by 1
+  `.execute(db);
+  return r.rows.map((x) => x.relname);
+}
+
+/** Tables de `public` sans RLS, hors de la liste explicite. */
+async function checkPublicTables(
+  db: Kysely<any>,
+  autorisees: readonly string[],
+): Promise<string[]> {
+  const r = await sql<{ relname: string }>`
+    select c.relname
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p') and not c.relrowsecurity
+      and not c.relispartition
+      and c.relname <> all(${[...autorisees]}::text[])
+    order by 1
+  `.execute(db);
+  return r.rows.map((x) => x.relname);
+}
+
+/**
+ * Les migrations du socle doivent TOUTES être appliquées, et les tables de
+ * l'hôte présentes. Une base vide ou à moitié migrée n'est pas « saine » :
+ * aucune règle ne s'y viole, faute de table à vérifier.
+ */
+async function checkMigrations(
+  db: Kysely<any>,
+  tablesAttendues: readonly string[],
+): Promise<string[]> {
+  const manquantes: string[] = [];
+  const suivi = await sql<{ lisible: boolean | null }>`
+    select case when to_regclass('public.tenancy_migrations') is null then null
+                else has_table_privilege('public.tenancy_migrations', 'select') end as lisible
+  `.execute(db);
+  const lisible = suivi.rows[0].lisible;
+  if (lisible) {
+    const r = await sql<{ name: string }>`select name from tenancy_migrations`.execute(
+      db,
+    );
+    const faites = new Set(r.rows.map((x) => x.name));
+    manquantes.push(...MIGRATIONS.map((m) => m.name).filter((n) => !faites.has(n)));
+  } else {
+    // Absente, ou illisible (migration 006 non appliquée) : rien n'est prouvé.
+    manquantes.push(...MIGRATIONS.map((m) => m.name));
+  }
+  if (tablesAttendues.length > 0) {
+    const r = await sql<{ t: string }>`
+      select t from unnest(${[...tablesAttendues]}::text[]) as t
+      where to_regclass('public.' || quote_ident(t)) is null
+    `.execute(db);
+    manquantes.push(...r.rows.map((x) => `table ${x.t}`));
+  }
+  return manquantes;
 }
 
 /** Règle 2 — FORCE obligatoire : sans lui, le propriétaire contourne. */
@@ -106,28 +209,27 @@ async function checkWithCheck(
  * Les contraintes d'unicité contournent la RLS par conception. Un UNIQUE
  * global sur une table tenant est donc un ORACLE D'EXISTENCE inter-tenant :
  * l'erreur de duplication révèle qu'une ligne existe ailleurs.
+ *
+ * Lu dans `pg_index` (`indisunique`), pas dans `pg_constraint` : un
+ * `CREATE UNIQUE INDEX` n'y apparaît pas, et fait le même oracle. La clé
+ * primaire est exclue : un identifiant tiré au hasard ne révèle rien.
  */
 async function checkGlobalUniques(
   db: Kysely<any>,
 ): Promise<Array<{ table: string; constraint: string }>> {
   const r = await sql<{ relname: string; conname: string }>`
-    select c.relname, con.conname
-    from pg_constraint con
-    join pg_class c on c.oid = con.conrelid
+    select c.relname, i.relname as conname
+    from pg_index x
+    join pg_class c on c.oid = x.indrelid
+    join pg_class i on i.oid = x.indexrelid
     join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = c.oid and a.attname = 'tenant_id'
+                       and a.attnum > 0 and not a.attisdropped
     where n.nspname = 'public'
-      and con.contype = 'u'
-      -- la table porte tenant_id …
-      and exists (
-        select 1 from pg_attribute a
-        where a.attrelid = c.oid and a.attname = 'tenant_id' and a.attnum > 0
-      )
-      -- … mais la contrainte ne l'inclut pas
-      and not exists (
-        select 1 from pg_attribute a
-        where a.attrelid = c.oid and a.attname = 'tenant_id'
-          and a.attnum = any(con.conkey)
-      )
+      and x.indisunique and not x.indisprimary
+      -- l index ne porte pas tenant_id parmi ses colonnes
+      and not (a.attnum = any(x.indkey::int2[]))
+    order by 1, 2
   `.execute(db);
   return r.rows.map((x) => ({ table: x.relname, constraint: x.conname }));
 }
@@ -157,6 +259,7 @@ async function checkRole(db: Kysely<any>): Promise<string | null> {
 export async function auditRls(
   db: Kysely<any>,
   logger?: TenancyLogger,
+  options: OptionsAuditRls = {},
 ): Promise<RlsAudit> {
   const [
     missingForce,
@@ -165,6 +268,9 @@ export async function auditRls(
     missingWithCheck,
     globalUniques,
     unsafeRole,
+    withoutTenantRestrictive,
+    unlistedPublicTables,
+    missingMigrations,
   ] = await Promise.all([
     checkForce(db),
     checkAnyPolicy(db),
@@ -172,7 +278,37 @@ export async function auditRls(
     checkWithCheck(db),
     checkGlobalUniques(db),
     checkRole(db),
+    checkTenantRestrictive(db),
+    checkPublicTables(db, [
+      ...TABLES_PUBLIQUES_SOCLE,
+      ...(options.tablesPubliques ?? []),
+    ]),
+    checkMigrations(db, options.tablesAttendues ?? []),
   ]);
+
+  for (const t of withoutTenantRestrictive) {
+    logger?.error(
+      `La table « ${t} » porte tenant_id sans policy RESTRICTIVE « for all » ` +
+        `lisant app.tenant en USING et en WITH CHECK : un tenant y voit les ` +
+        `lignes des autres. Ajoutez : CREATE POLICY tenant_isolation ON ${t} AS ` +
+        `RESTRICTIVE USING (tenant_id = (select nullif(current_setting('app.tenant', ` +
+        `true), '')::uuid)) WITH CHECK (…même condition…);`,
+    );
+  }
+  for (const t of unlistedPublicTables) {
+    logger?.error(
+      `La table « ${t} » est dans public SANS RLS, et ne figure pas dans la liste ` +
+        `des tables publiques. Activez la RLS (ENABLE puis FORCE, avec ses ` +
+        `policies), ou déclarez-la publique en connaissance de cause.`,
+    );
+  }
+  if (missingMigrations.length > 0) {
+    logger?.error(
+      `Base non migrée ou incomplète — manquant : ${missingMigrations.join(', ')}. ` +
+        `Une base sans tables ne viole aucune règle, et ne prouve rien. ` +
+        `Lancez « npm run migrate ».`,
+    );
+  }
 
   for (const t of missingForce) logger?.error(MSG.missingForce(t));
   for (const t of withoutPolicy) logger?.error(MSG.rlsWithoutPolicy(t));
@@ -219,7 +355,10 @@ export async function auditRls(
     withoutPermissive.length === 0 &&
     missingWithCheck.length === 0 &&
     globalUniques.length === 0 &&
-    unsafeRole === null;
+    unsafeRole === null &&
+    withoutTenantRestrictive.length === 0 &&
+    unlistedPublicTables.length === 0 &&
+    missingMigrations.length === 0;
 
   if (ok) logger?.log('Audit RLS : les six règles sont respectées');
 
@@ -230,6 +369,9 @@ export async function auditRls(
     missingWithCheck,
     globalUniques,
     unsafeRole,
+    withoutTenantRestrictive,
+    unlistedPublicTables,
+    missingMigrations,
     ok,
   };
 }
@@ -242,11 +384,20 @@ export async function auditRls(
 export async function assertRlsIsSound(
   db: Kysely<any>,
   logger?: TenancyLogger,
+  options: OptionsAuditRls = {},
 ): Promise<void> {
-  const a = await auditRls(db, logger);
+  const a = await auditRls(db, logger, options);
   if (a.ok) return;
 
   const problems: string[] = [];
+  if (a.missingMigrations.length)
+    problems.push(`non migré : ${a.missingMigrations.join(', ')}`);
+  if (a.withoutTenantRestrictive.length)
+    problems.push(
+      `sans restrictive app.tenant : ${a.withoutTenantRestrictive.join(', ')}`,
+    );
+  if (a.unlistedPublicTables.length)
+    problems.push(`sans RLS hors liste : ${a.unlistedPublicTables.join(', ')}`);
   if (a.missingForce.length) problems.push(`sans FORCE : ${a.missingForce.join(', ')}`);
   if (a.withoutPolicy.length)
     problems.push(`sans policy : ${a.withoutPolicy.join(', ')}`);

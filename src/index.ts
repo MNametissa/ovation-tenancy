@@ -17,9 +17,21 @@ export {
   type MigrationResult,
 } from './migrations/runner.js';
 
-export type { RoleCredentials } from './migrations/001-roles.js';
+export {
+  assurerRole,
+  assertSafePassword,
+  type RoleCredentials,
+  type RoleVoulu,
+  type OptionsRoles,
+} from './migrations/001-roles.js';
 
-export { auditRls, assertRlsIsSound, type RlsAudit } from './rls/guards.js';
+export {
+  auditRls,
+  assertRlsIsSound,
+  TABLES_PUBLIQUES_SOCLE,
+  type RlsAudit,
+  type OptionsAuditRls,
+} from './rls/guards.js';
 
 export {
   TenantContext,
