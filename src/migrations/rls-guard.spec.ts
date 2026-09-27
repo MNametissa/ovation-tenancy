@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
-import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import {
   withRlsDisabled,
   assertForceEnabled,
@@ -18,12 +18,10 @@ import {
 } from './rls-guard.js';
 import type { TenancyLogger } from '../logging.js';
 
-const { Pool } = pg;
-
 function mkDb(user: string, password: string) {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({
+      pool: new PoolDeTest({
         host: '127.0.0.1',
         port: 55432,
         database: 'ovation_probe',

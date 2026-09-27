@@ -40,12 +40,7 @@ export {
   type TenantScope,
 } from './context/tenant-context.js';
 
-export {
-  RoleService,
-  SYSTEM_ROLES,
-  type Role,
-  type RoleInput,
-} from './roles/role-service.js';
+export { RoleService, type Role, type RoleInput } from './roles/role-service.js';
 
 export {
   PermissionSink,
@@ -68,4 +63,16 @@ export {
   ForbiddenError,
   type AppAbility,
   type AbilityContext,
+  type OptionsAbility,
 } from './authorization/ability.js';
+
+export { TenancyModule, type OptionsTenancy } from './tenancy.module.js';
+export { PermissionGuard } from './permission.guard.js';
+export {
+  IdentitySource,
+  TenantInterceptor,
+  resoudreIdentite,
+  SESSION_VALIDE,
+  type RequestIdentity,
+} from './tenant.interceptor.js';
+export { ResolutionPermissions, SESSION_REQUISE } from './tokens.js';

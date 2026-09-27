@@ -8,11 +8,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import { auditRls, assertRlsIsSound } from './guards.js';
 import { runMigrations } from '../migrations/runner.js';
 import type { TenancyLogger } from '../logging.js';
 
-const { Pool, Client } = pg;
+const { Client } = pg;
 const DB = 'tenancy_rls_test';
 
 const CREDENTIALS = {
@@ -23,7 +24,7 @@ const CREDENTIALS = {
 function mkDb(database: string, user = 'postgres', password = 'probe') {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({
+      pool: new PoolDeTest({
         host: '127.0.0.1',
         port: 55432,
         database,

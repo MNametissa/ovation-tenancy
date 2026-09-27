@@ -70,7 +70,15 @@ export function actionCasl(action: string): string {
   return action === 'manage' ? 'gerer' : action;
 }
 
-export function buildAbility(ctx: AbilityContext): AppAbility {
+export interface OptionsAbility {
+  /** Champ de portée par type de sujet CASL ; `id` par défaut. */
+  champsPortee?: Readonly<Record<string, string>>;
+}
+
+export function buildAbility(
+  ctx: AbilityContext,
+  options: OptionsAbility = {},
+): AppAbility {
   const { can, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
 
   for (const code of ctx.permissions) {
@@ -103,7 +111,9 @@ export function buildAbility(ctx: AbilityContext): AppAbility {
     if (portees === 'partout') {
       can(actionCasl(action), resource);
     } else {
-      can(actionCasl(action), resource, { id: { $in: portees } } as never);
+      can(actionCasl(action), resource, {
+        [options.champsPortee?.[resource] ?? 'id']: { $in: portees },
+      } as never);
     }
   }
 

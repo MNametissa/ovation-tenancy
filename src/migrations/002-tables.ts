@@ -24,9 +24,6 @@ export async function up(db: Kysely<any>): Promise<void> {
       id             uuid primary key default gen_random_uuid(),
       slug           citext not null unique,
       nom            text not null,
-      raison_sociale text,
-      rccm           text,
-      pays           char(2) not null,
       statut         text not null default 'actif'
                      check (statut in ('actif','suspendu','archive')),
       creee_le       timestamptz not null default now()

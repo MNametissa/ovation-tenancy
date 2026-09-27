@@ -5,10 +5,11 @@
  * tentée sous le vrai rôle, une empreinte de mot de passe relue dans
  * `pg_authid`. Base dédiée, migrée une fois.
  */
-import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, jest } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
-import { runMigrations } from './runner.js';
+import { PoolDeTest } from '../fixtures/pool-test.js';
+import { runMigrations, MIGRATIONS } from './runner.js';
 import { TEST_CREDENTIALS } from '../test-globals.js';
 
 const DB = 'tenancy_durcissement_test';
@@ -18,7 +19,7 @@ const T_B = '11111111-0000-0000-0000-00000000000b';
 function mkDb(user = 'postgres', password = 'probe') {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new pg.Pool({
+      pool: new PoolDeTest({
         host: '127.0.0.1',
         port: 55432,
         database: DB,
@@ -55,8 +56,8 @@ beforeAll(async () => {
   admin = mkDb();
   await runMigrations(admin, { credentials: TEST_CREDENTIALS });
   runtime = mkDb('app_runtime', TEST_CREDENTIALS.runtime);
-  await sql`insert into tenant (id, slug, nom, pays)
-            values (${T_A}, 'a', 'A', 'CM'), (${T_B}, 'b', 'B', 'CM')`.execute(admin);
+  await sql`insert into tenant (id, slug, nom)
+            values (${T_A}, 'a', 'A'), (${T_B}, 'b', 'B')`.execute(admin);
 });
 
 afterAll(async () => {
@@ -95,34 +96,33 @@ describe('L1-8 — mot de passe d’un rôle EXISTANT', () => {
     expect(await empreinte('app_auth')).toBe(avantAuth);
   });
 
-  it('le réécrit sur option EXPLICITE (realignerMotsDePasse)', async () => {
-    const avant = await empreinte('app_runtime');
-    await sql`delete from tenancy_migrations where name = '001-roles'`.execute(admin);
-    await runMigrations(admin, {
-      credentials: TEST_CREDENTIALS,
-      verify: false,
-      realignerMotsDePasse: true,
-    });
-    expect(await empreinte('app_runtime')).not.toBe(avant);
-    // La même valeur : le rôle reste joignable par les autres suites.
-    const r = await sql<{ u: string }>`select current_user as u`.execute(runtime);
-    expect(r.rows[0].u).toBe('app_runtime');
-  });
-
-  // TROUVÉ par la recette L1 : sur une base DÉJÀ migrée (001 enregistrée),
-  // l'option ne réécrivait rien — la 001 était sautée. Une rotation de mots de
-  // passe sur une base en service échouait en silence.
-  it('le réécrit sur option même quand la 001 est DÉJÀ appliquée', async () => {
-    const avant = await empreinte('app_runtime');
-    const avantAuth = await empreinte('app_auth');
-    await runMigrations(admin, {
-      credentials: TEST_CREDENTIALS,
-      verify: false,
-      realignerMotsDePasse: true,
-    });
-    expect(await empreinte('app_runtime')).not.toBe(avant);
-    expect(await empreinte('app_auth')).not.toBe(avantAuth);
-  });
+  it.each([false, true])(
+    'transmet la rotation explicite, 001 déjà appliquée : %s',
+    async (deja) => {
+      // Les rôles partagés ne sont jamais réécrits par les tests : on observe
+      // la délégation au pilote, dont la rotation est testée sur un rôle jetable.
+      if (!deja)
+        await sql`delete from tenancy_migrations where name = '001-roles'`.execute(
+          admin,
+        );
+      const pilote = jest.spyOn(MIGRATIONS[0], 'up').mockResolvedValue(undefined);
+      try {
+        await runMigrations(admin, {
+          credentials: TEST_CREDENTIALS,
+          verify: false,
+          realignerMotsDePasse: true,
+        });
+        expect(pilote).toHaveBeenCalledWith(
+          expect.anything(),
+          TEST_CREDENTIALS,
+          undefined,
+          { realignerMotsDePasse: true },
+        );
+      } finally {
+        pilote.mockRestore();
+      }
+    },
+  );
 });
 
 describe('L1-4 — droits d’app_runtime sur le catalogue global', () => {
@@ -140,6 +140,8 @@ describe('L1-4 — droits d’app_runtime sur le catalogue global', () => {
     ['utilisateur', 'UPDATE'],
     ['utilisateur', 'DELETE'],
     ['permission', 'DELETE'],
+    ['permission', 'INSERT'],
+    ['permission', 'UPDATE'],
     ['tenant', 'INSERT'],
     ['tenant', 'DELETE'],
   ])('%s : %s révoqué', async (table, privilege) => {
@@ -148,8 +150,7 @@ describe('L1-4 — droits d’app_runtime sur le catalogue global', () => {
 
   it.each([
     ['utilisateur', 'SELECT'],
-    ['permission', 'INSERT'],
-    ['permission', 'UPDATE'],
+    ['permission', 'SELECT'],
     ['tenant', 'SELECT'],
     ['tenant', 'UPDATE'],
   ])('%s : %s conservé (utilisé par le code)', async (table, privilege) => {
@@ -159,7 +160,7 @@ describe('L1-4 — droits d’app_runtime sur le catalogue global', () => {
   it('une création de tenant sous app_runtime est REFUSÉE', async () => {
     await expect(
       sousTenant(T_A, (trx) =>
-        sql`insert into tenant (slug, nom, pays) values ('x', 'X', 'CM')`.execute(trx),
+        sql`insert into tenant (slug, nom) values ('x', 'X')`.execute(trx),
       ),
     ).rejects.toThrow(/permission denied/);
   });

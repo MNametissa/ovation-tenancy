@@ -21,6 +21,7 @@ import { ClsPluginTransactional } from '@nestjs-cls/transactional';
 import { TransactionalAdapterKysely } from '@nestjs-cls/transactional-adapter-kysely';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import { runMigrations } from '../migrations/runner.js';
 import { CLS_TENANT, CLS_USER, TenantContext } from './tenant-context.js';
 import { MSG, TENANCY_LOGGER, type TenancyLogger } from '../logging.js';
@@ -40,7 +41,7 @@ const KYSELY = Symbol('KYSELY');
 })
 class DbModule {}
 
-const { Pool, Client } = pg;
+const { Client } = pg;
 const DB = 'tenancy_ctx_test';
 
 const CREDENTIALS = {
@@ -55,7 +56,14 @@ const U_1 = 'aaaaaaaa-0000-0000-0000-000000000001';
 function mkDb(database: string, user: string, password: string, max = 1) {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({ host: '127.0.0.1', port: 55432, database, user, password, max }),
+      pool: new PoolDeTest({
+        host: '127.0.0.1',
+        port: 55432,
+        database,
+        user,
+        password,
+        max,
+      }),
     }),
   });
 }
@@ -95,8 +103,8 @@ beforeAll(async () => {
   // Deux tenants et un utilisateur, insérés en levant FORCE.
   await sql`alter table tenant no force row level security`.execute(admin);
   await sql`alter table appartenance no force row level security`.execute(admin);
-  await sql`insert into tenant (id, slug, nom, pays) values
-    (${T_A}, 'a', 'Tenant A', 'CM'), (${T_B}, 'b', 'Tenant B', 'CM')`.execute(admin);
+  await sql`insert into tenant (id, slug, nom) values
+    (${T_A}, 'a', 'Tenant A'), (${T_B}, 'b', 'Tenant B')`.execute(admin);
   await sql`insert into utilisateur (id, auth_sub, email) values
     (${U_1}, 'sub-1', 'u1@test.cm')`.execute(admin);
   await sql`alter table tenant force row level security`.execute(admin);

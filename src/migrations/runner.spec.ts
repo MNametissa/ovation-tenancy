@@ -9,11 +9,12 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import { runMigrations, rollbackMigrations, MIGRATIONS } from './runner.js';
 import { assertSafePassword } from './001-roles.js';
 import type { TenancyLogger } from '../logging.js';
 
-const { Pool, Client } = pg;
+const { Client } = pg;
 const DB = 'tenancy_test';
 
 // Mots de passe de TEST uniquement. La validation exige 8 caractères minimum
@@ -27,7 +28,7 @@ const CREDENTIALS = {
 function mkDb(database: string, user = 'postgres', password = 'probe') {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({
+      pool: new PoolDeTest({
         host: '127.0.0.1',
         port: 55432,
         database,

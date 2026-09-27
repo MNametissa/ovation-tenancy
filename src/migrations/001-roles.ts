@@ -34,14 +34,16 @@ import type { TenancyLogger } from '../logging.js';
  */
 
 export interface RoleCredentials {
-  runtime: string;
-  auth: string;
+  runtime?: string;
+  auth?: string;
 }
 
 export interface OptionsRoles {
   /** Réécrit le mot de passe des rôles EXISTANTS. Faux par défaut. */
   realignerMotsDePasse?: boolean;
   logger?: TenancyLogger;
+  /** Vérification seule : les rôles doivent avoir été provisionnés. */
+  rolesExistants?: boolean;
 }
 
 /**
@@ -88,19 +90,20 @@ export interface RoleVoulu {
 const COURSE = /concurrently updated|already exists|duplicate key/;
 
 /**
- * Crée le rôle s'il manque ; sinon réaligne SES ATTRIBUTS s'ils divergent, et
- * son mot de passe SEULEMENT sur option.
+ * Crée le rôle s'il manque ; vérifie les attributs existants sans les modifier.
+ * Le mot de passe ne change que sur option explicite hors vérification seule.
  *
- * `ALTER ROLE` n'est émis que si l'état diffère : un réalignement inconditionnel
- * produisait `tuple concurrently updated` entre deux bases migrées ensemble —
- * le verrou consultatif n'y peut rien, il est propre à UNE base.
+ * Aucun ALTER des attributs : ils appartiennent à l’administrateur du cluster.
+ * Les courses de création restent tolérées entre bases distinctes ; le verrou
+ * consultatif de la migration est propre à une seule base.
  */
 export async function assurerRole(
   db: Kysely<any>,
   r: RoleVoulu,
   o: OptionsRoles = {},
 ): Promise<void> {
-  if (r.password !== undefined) assertSafePassword(r.name, r.password);
+  if (r.password !== undefined && !o.rolesExistants)
+    assertSafePassword(r.name, r.password);
   // Les identifiants et mots de passe ne peuvent pas être des paramètres liés
   // dans un CREATE ROLE : on interpole après validation stricte.
   const pwd = r.password !== undefined ? ` password '${r.password}'` : '';
@@ -113,6 +116,10 @@ export async function assurerRole(
 
   try {
     if (!ligne) {
+      if (o.rolesExistants)
+        throw new Error(
+          `Rôle « ${r.name} » absent : demandez son provisionnement à l’administrateur du cluster.`,
+        );
       await sql.raw(`create role ${r.name} ${r.options}${pwd}`).execute(db);
       o.logger?.log(`Rôle « ${r.name} » créé`);
       return;
@@ -125,10 +132,11 @@ export async function assurerRole(
         return attendu !== undefined && ligne[attendu[0]] !== attendu[1];
       });
     if (divergent) {
-      await sql.raw(`alter role ${r.name} ${r.options}`).execute(db);
-      o.logger?.warn(`Rôle « ${r.name} » : attributs réalignés (${r.options})`);
+      throw new Error(
+        `Rôle « ${r.name} » incompatible avec le contrat (${r.options}) : contactez l’administrateur du cluster ; aucun attribut n’a été modifié.`,
+      );
     }
-    if (o.realignerMotsDePasse && pwd) {
+    if (o.realignerMotsDePasse && !o.rolesExistants && pwd) {
       await sql.raw(`alter role ${r.name}${pwd}`).execute(db);
       o.logger?.warn(
         `Rôle « ${r.name} » : mot de passe RÉÉCRIT (option explicite). Il vaut pour ` +
@@ -156,7 +164,7 @@ const ROLE_LOCK_ID = 847_100_001;
 
 export async function up(
   db: Kysely<any>,
-  credentials: RoleCredentials,
+  credentials: RoleCredentials = {},
   logger?: TenancyLogger,
   options: Omit<OptionsRoles, 'logger'> = {},
 ): Promise<void> {
@@ -175,7 +183,8 @@ export async function up(
   ];
   // Valider AVANT toute écriture : un mot de passe refusé ne laisse rien derrière.
   for (const r of plan)
-    if (r.password !== undefined) assertSafePassword(r.name, r.password);
+    if (r.password !== undefined && !options.rolesExistants)
+      assertSafePassword(r.name, r.password);
 
   await db.connection().execute(async (conn) => {
     await sql`select pg_advisory_lock(${ROLE_LOCK_ID})`.execute(conn);

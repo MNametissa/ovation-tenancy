@@ -8,6 +8,7 @@ import * as m004 from './004-rls.js';
 import * as m005 from './005-audit-chaine.js';
 import * as m006 from './006-durcissement.js';
 import * as m007 from './007-audit-v2.js';
+import * as m008 from './008-portee-catalogue.js';
 import type { OptionsRoles, RoleCredentials } from './001-roles.js';
 
 /**
@@ -71,10 +72,13 @@ export const MIGRATIONS: Migration[] = [
   },
   { name: '006-durcissement', up: (db) => m006.up(db), down: (db) => m006.down(db) },
   { name: '007-audit-v2', up: (db) => m007.up(db), down: (db) => m007.down(db) },
+  { name: '008-portee-catalogue', up: m008.up, down: m008.down },
 ];
 
 export interface RunOptions {
-  credentials: RoleCredentials;
+  credentials?: RoleCredentials;
+  /** Ne crée ni ne modifie les rôles globaux du cluster. */
+  rolesExistants?: boolean;
   logger?: TenancyLogger;
   /** Vérifie l'état RLS après migration. Défaut : true. */
   verify?: boolean;
@@ -122,7 +126,13 @@ export async function runMigrations(
   db: Kysely<any>,
   opts: RunOptions,
 ): Promise<MigrationResult> {
-  const { credentials, logger, verify = true, realignerMotsDePasse = false } = opts;
+  const {
+    credentials = {},
+    logger,
+    verify = true,
+    realignerMotsDePasse = false,
+    rolesExistants,
+  } = opts;
 
   await ensureTable(db);
   const done = await alreadyApplied(db);
@@ -137,7 +147,10 @@ export async function runMigrations(
       // rejouée — sans quoi l'option restait sans effet, en silence (recette L1).
       if (realignerMotsDePasse && migration.rejoueeAuRealignement) {
         logger?.log(`Migration « ${migration.name} » rejouée : réalignement demandé`);
-        await migration.up(db, credentials, logger, { realignerMotsDePasse });
+        await migration.up(db, credentials, logger, {
+          realignerMotsDePasse,
+          ...(rolesExistants ? { rolesExistants } : {}),
+        });
         continue;
       }
       skipped.push(migration.name);
@@ -159,7 +172,10 @@ export async function runMigrations(
         //
         // Sans risque ici : elle ne touche ni aux tables ni à FORCE RLS, donc
         // rien ne peut rester à moitié appliqué de façon dangereuse.
-        await migration.up(db, credentials, logger, { realignerMotsDePasse });
+        await migration.up(db, credentials, logger, {
+          realignerMotsDePasse,
+          ...(rolesExistants ? { rolesExistants } : {}),
+        });
         await sql`insert into ${sql.ref(TABLE)} (name) values (${migration.name})`.execute(
           db,
         );

@@ -28,7 +28,9 @@
     "@nestjs/common": "^11.0.0 || ^12.0.0",
     "@nestjs/core": "^11.0.0 || ^12.0.0",
     "kysely": "^0.27.0 || ^0.28.0 || ^0.29.0",
-    "reflect-metadata": "^0.1.13 || ^0.2.0"
+    "reflect-metadata": "^0.1.13 || ^0.2.0",
+    "nestjs-cls": "^7.0.1",
+    "@nestjs-cls/transactional": "^4.0.1"
   },
   "devDependencies": {
     "@nestjs/common": "^12.1.0",
@@ -42,12 +44,12 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "ts-jest": "^29.4.14",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "nestjs-cls": "^7.0.1",
+    "@nestjs-cls/transactional": "^4.0.1"
   },
   "dependencies": {
     "@casl/ability": "^7.0.1",
-    "@nestjs-cls/transactional": "^4.0.1",
-    "@nestjs-cls/transactional-adapter-kysely": "^2.0.1",
-    "nestjs-cls": "^7.0.1"
+    "@nestjs-cls/transactional-adapter-kysely": "^2.0.1"
   }
 }

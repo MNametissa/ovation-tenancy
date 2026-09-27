@@ -1,3 +1,4 @@
+import { SYSTEM_ROLES } from '../fixtures/roles-systeme.js';
 /**
  * Tests des rôles configurables et de `app_a_permission`, contre PostgreSQL
  * réel.
@@ -11,10 +12,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import { runMigrations } from '../migrations/runner.js';
-import { RoleService, SYSTEM_ROLES } from './role-service.js';
+import { RoleService } from './role-service.js';
 
-const { Pool, Client } = pg;
+const { Client } = pg;
 const DB = 'tenancy_roles_test';
 
 const CREDENTIALS = {
@@ -31,7 +33,14 @@ const EV_1 = 'e1111111-0000-0000-0000-000000000001';
 function mkDb(database: string, user: string, password: string, max = 2) {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({ host: '127.0.0.1', port: 55432, database, user, password, max }),
+      pool: new PoolDeTest({
+        host: '127.0.0.1',
+        port: 55432,
+        database,
+        user,
+        password,
+        max,
+      }),
     }),
   });
 }
@@ -110,12 +119,12 @@ beforeEach(async () => {
     ('score.read.own', 'Lire ses notes', 'jury'),
     ('audit.read', 'Lire le journal', 'audit')`.execute(admin);
 
-  await sql`insert into tenant (id, slug, nom, pays) values
-    (${T_A}, 'a', 'Tenant A', 'CM'), (${T_B}, 'b', 'Tenant B', 'CM')`.execute(admin);
+  await sql`insert into tenant (id, slug, nom) values
+    (${T_A}, 'a', 'Tenant A'), (${T_B}, 'b', 'Tenant B')`.execute(admin);
   await sql`insert into utilisateur (id, auth_sub, email) values
     (${U_1}, 'sub-1', 'u1@test.cm'), (${U_2}, 'sub-2', 'u2@test.cm')`.execute(admin);
 
-  await roles.ensureSystemRoles();
+  await roles.ensureSystemRoles(SYSTEM_ROLES);
 
   for (const t of [
     'appartenance',
@@ -129,7 +138,7 @@ beforeEach(async () => {
 });
 
 describe('T3.6 — rôles système', () => {
-  it('installe les sept rôles livrés', async () => {
+  it('installe les sept rôles fournis par le consommateur', async () => {
     const r = await sql<{ n: number }>`
       select count(*)::int as n from role where systeme and tenant_id is null
     `.execute(admin);
@@ -137,7 +146,7 @@ describe('T3.6 — rôles système', () => {
   });
 
   it('est idempotent : un second appel ne duplique rien', async () => {
-    const created = await roles.ensureSystemRoles();
+    const created = await roles.ensureSystemRoles(SYSTEM_ROLES);
     expect(created).toHaveLength(0);
   });
 
@@ -151,7 +160,7 @@ describe('T3.6 — rôles système', () => {
   it('RÉGRESSION : un rôle système tolère une permission absente du catalogue', async () => {
     // TROUVÉ EN INTÉGRATION : `observateur` déclare `audit.read`, mais le
     // catalogue dépend de l'application hôte. La version stricte faisait
-    // PLANTER ensureSystemRoles() au démarrage de toute application n'exposant
+    // PLANTER ensureSystemRoles(SYSTEM_ROLES) au démarrage de toute application n'exposant
     // pas cette route.
     await sql`alter table role no force row level security`.execute(admin);
     await sql`alter table role_permission no force row level security`.execute(admin);
@@ -171,7 +180,7 @@ describe('T3.6 — rôles système', () => {
     });
 
     // Ne doit PAS lever.
-    const created = await svc.ensureSystemRoles();
+    const created = await svc.ensureSystemRoles(SYSTEM_ROLES);
     expect(created).toHaveLength(SYSTEM_ROLES.length);
 
     // Mais doit AVERTIR, avec l'action corrective.

@@ -1,3 +1,4 @@
+import { SYSTEM_ROLES } from '../fixtures/roles-systeme.js';
 /**
  * T3.9 — autorisation applicative CASL, contre PostgreSQL réel.
  *
@@ -7,6 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import { runMigrations } from '../migrations/runner.js';
 import { RoleService } from '../roles/role-service.js';
 import {
@@ -16,7 +18,7 @@ import {
   ForbiddenError,
 } from './ability.js';
 
-const { Pool, Client } = pg;
+const { Client } = pg;
 const DB = 'tenancy_casl_test';
 
 const CREDENTIALS = {
@@ -35,7 +37,14 @@ const EV_2 = 'e1111111-0000-0000-0000-000000000002';
 function mkDb(database: string, user: string, password: string, max = 2) {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({ host: '127.0.0.1', port: 55432, database, user, password, max }),
+      pool: new PoolDeTest({
+        host: '127.0.0.1',
+        port: 55432,
+        database,
+        user,
+        password,
+        max,
+      }),
     }),
   });
 }
@@ -94,15 +103,15 @@ beforeEach(async () => {
     ('score.create', 'Noter', 'jury'),
     ('audit.read', 'Lire le journal', 'audit')`.execute(admin);
 
-  await sql`insert into tenant (id, slug, nom, pays) values
-    (${T_A}, 'a', 'Tenant A', 'CM'), (${T_B}, 'b', 'Tenant B', 'CM')`.execute(admin);
+  await sql`insert into tenant (id, slug, nom) values
+    (${T_A}, 'a', 'Tenant A'), (${T_B}, 'b', 'Tenant B')`.execute(admin);
   await sql`insert into utilisateur (id, auth_sub, email) values
     (${U_ORGA}, 'sub-orga', 'orga@test.cm'),
     (${U_JURE1}, 'sub-j1', 'j1@test.cm'),
     (${U_JURE2}, 'sub-j2', 'j2@test.cm')`.execute(admin);
 
   const roles = new RoleService(admin);
-  await roles.ensureSystemRoles();
+  await roles.ensureSystemRoles(SYSTEM_ROLES);
 
   const orgaRole = await sql<{ id: string }>`
     select id from role where code = 'organisateur'`.execute(admin);

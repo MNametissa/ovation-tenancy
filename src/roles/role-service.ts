@@ -34,54 +34,6 @@ export interface Role {
   porteeRequise: boolean;
 }
 
-/** Les sept rôles système livrés. Modifiables par le tenant, non supprimables. */
-export const SYSTEM_ROLES: RoleInput[] = [
-  {
-    code: 'proprietaire',
-    libelle: 'Propriétaire',
-    description: 'Tous les droits, y compris facturation et suppression',
-    permissions: ['*'],
-  },
-  {
-    code: 'administrateur',
-    libelle: 'Administrateur',
-    description: 'Configure les évènements et gère les membres',
-    permissions: [],
-  },
-  {
-    code: 'organisateur',
-    libelle: 'Organisateur',
-    description: 'Gère un évènement précis',
-    porteeRequise: true,
-    permissions: [],
-  },
-  {
-    code: 'moderateur',
-    libelle: 'Modérateur',
-    description: 'Valide les candidatures, traite les signalements',
-    permissions: [],
-  },
-  {
-    code: 'jure',
-    libelle: 'Juré',
-    description: 'Accède à sa grille de notation, et à elle seule',
-    porteeRequise: true,
-    permissions: [],
-  },
-  {
-    code: 'observateur',
-    libelle: 'Observateur',
-    description: 'Lecture seule du journal d’audit',
-    permissions: ['audit.read'],
-  },
-  {
-    code: 'tresorier',
-    libelle: 'Trésorier',
-    description: 'Flux financiers — jamais les votes ni les notes',
-    permissions: [],
-  },
-];
-
 export class RoleService {
   constructor(
     private readonly db: Kysely<any>,
@@ -94,10 +46,10 @@ export class RoleService {
    * Idempotent : un rôle déjà présent n'est pas écrasé — le tenant a pu le
    * modifier, et cette modification lui appartient.
    */
-  async ensureSystemRoles(): Promise<string[]> {
+  async ensureSystemRoles(rolesSysteme: readonly RoleInput[] = []): Promise<string[]> {
     const created: string[] = [];
 
-    for (const r of SYSTEM_ROLES) {
+    for (const r of rolesSysteme) {
       const existing = await sql<{ id: string }>`
         select id from role where tenant_id is null and code = ${r.code}
       `.execute(this.db);

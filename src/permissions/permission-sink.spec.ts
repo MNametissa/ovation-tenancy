@@ -9,17 +9,18 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import { runMigrations } from '../migrations/runner.js';
 import { PermissionSink } from './permission-sink.js';
 
-const { Pool, Client } = pg;
+const { Client } = pg;
 const DB = 'tenancy_sink_concurrent_test';
 const CREDENTIALS = { runtime: 'test_runtime_pwd', auth: 'test_auth_pwd' };
 
 function mkDb(user: string, password: string, max = 2) {
   return new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new Pool({
+      pool: new PoolDeTest({
         host: '127.0.0.1',
         port: 55432,
         database: DB,
@@ -56,6 +57,10 @@ beforeAll(async () => {
   });
   admin = mkDb('postgres', 'probe', 3);
   await runMigrations(admin, { credentials: CREDENTIALS, verify: false });
+  // Le consommateur choisit une connexion de publication distincte du métier.
+  await sql`grant usage on schema public to app_auth`.execute(admin);
+  await sql`grant select, insert, update on permission to app_auth`.execute(admin);
+  await sql`grant select on role_permission to app_auth`.execute(admin);
 }, 60_000);
 
 afterAll(async () => {
@@ -68,7 +73,7 @@ describe('L6-3 — synchronisation idempotente sous démarrage concurrent', () =
     // Un pool PAR instance, sous le rôle de l'application : de vraies sessions
     // distinctes, qui lisent toutes « rien de connu » avant d'insérer.
     const instances = Array.from({ length: 6 }, () =>
-      mkDb('app_runtime', CREDENTIALS.runtime, 1),
+      mkDb('app_auth', CREDENTIALS.auth, 1),
     );
     const catalogue = {
       permissions: Array.from({ length: 60 }, (_, i) => ({

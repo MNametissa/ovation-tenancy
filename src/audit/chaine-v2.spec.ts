@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import { Kysely, PostgresDialect, sql } from 'kysely';
 import pg from 'pg';
+import { PoolDeTest } from '../fixtures/pool-test.js';
 import { AuditService } from './audit-service.js';
 import { runMigrations } from '../migrations/runner.js';
 import { TEST_CREDENTIALS } from '../test-globals.js';
@@ -36,7 +37,7 @@ beforeAll(async () => {
   await superuser(`create database ${DB}`);
   admin = new Kysely<any>({
     dialect: new PostgresDialect({
-      pool: new pg.Pool({
+      pool: new PoolDeTest({
         host: '127.0.0.1',
         port: 55432,
         database: DB,
@@ -47,8 +48,8 @@ beforeAll(async () => {
     }),
   });
   await runMigrations(admin, { credentials: TEST_CREDENTIALS, verify: false });
-  await sql`insert into tenant (id, slug, nom, pays)
-            values (${T_A}, 'a', 'A', 'CM'), (${T_B}, 'b', 'B', 'CM')`.execute(admin);
+  await sql`insert into tenant (id, slug, nom)
+            values (${T_A}, 'a', 'A'), (${T_B}, 'b', 'B')`.execute(admin);
 });
 
 afterAll(async () => {
@@ -150,7 +151,7 @@ describe('L1-7 — queue tronquée', () => {
 
   it('une chaîne jamais écrite reste valide', async () => {
     const vierge = '22222222-0000-0000-0000-0000000000cc';
-    await sql`insert into tenant (id, slug, nom, pays) values (${vierge}, 'c', 'C', 'CM')`.execute(
+    await sql`insert into tenant (id, slug, nom) values (${vierge}, 'c', 'C')`.execute(
       admin,
     );
     expect((await new AuditService(admin).verifyChain(vierge)).valid).toBe(true);
@@ -192,7 +193,7 @@ describe('L1-7 — performance (audit du 2026-09-27)', () => {
 
   it('verifyChain rend la PREMIÈRE rupture, et le compte complet', async () => {
     const t = '22222222-0000-0000-0000-0000000000dd';
-    await sql`insert into tenant (id, slug, nom, pays) values (${t}, 'd', 'D', 'CM')`.execute(
+    await sql`insert into tenant (id, slug, nom) values (${t}, 'd', 'D')`.execute(
       admin,
     );
     for (const a of ['r.1', 'r.2', 'r.3', 'r.4']) await ecrire(t, a);
@@ -218,7 +219,7 @@ describe('L1-7 — l’existant est recalculé par la migration', () => {
     await superuser(`create database ${nom}`);
     const db = new Kysely<any>({
       dialect: new PostgresDialect({
-        pool: new pg.Pool({
+        pool: new PoolDeTest({
           host: '127.0.0.1',
           port: 55432,
           database: nom,
@@ -235,7 +236,7 @@ describe('L1-7 — l’existant est recalculé par la migration', () => {
         db,
       );
       await runMigrations(db, { credentials: TEST_CREDENTIALS, verify: false });
-      await sql`insert into tenant (id, slug, nom, pays) values (${T_A}, 'a', 'A', 'CM')`.execute(
+      await sql`insert into tenant (id, slug, nom) values (${T_A}, 'a', 'A')`.execute(
         db,
       );
       for (const a of ['e.1', 'e.2', 'e.3'])
