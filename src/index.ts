@@ -76,3 +76,7 @@ export {
   type RequestIdentity,
 } from './tenant.interceptor.js';
 export { ResolutionPermissions, SESSION_REQUISE } from './tokens.js';
+export {
+  avecContexteVerifie,
+  type PreuveContexte,
+} from './context/contexte-verifie.js';

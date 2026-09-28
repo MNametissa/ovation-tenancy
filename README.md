@@ -216,3 +216,119 @@ Les tests `independance.spec.ts`, `roles-partages.spec.ts`, `tenancy.module.spec
 `contrat-paquet.spec.ts` et `readme.spec.ts` vérifient ces contrats. Ovation vérifie
 également la conservation des tenants historiques et la lecture directe du journal
 sous `app_runtime` dans ses tests de migration et d’audit à portée.
+
+### Contexte vérifié optionnel (A-4)
+
+`TenantContext` reste rétrocompatible : les tables administratives continuent à
+utiliser `app.tenant`. Ce contexte historique n’est pas une preuve d’identité pour
+les futures tables d’argent et de preuve.
+
+Ovation installe les fonctions du contrat par la migration applicative
+`m0b-contexte-verifie`. `avecContexteVerifie(db, preuve, callback)` ouvre une
+transaction et appelle la fonction correspondant à la preuve :
+
+- `session` : Better Auth émet le jeton de session. L’application obtient le jeton
+  depuis la session validée, jamais depuis un identifiant d’utilisateur déclaré.
+  PostgreSQL vérifie le jeton, son expiration et l’appartenance encore présente
+  (la révocation du socle supprime l’appartenance). L’organisation choisie par
+  l’en-tête doit être l’une de ces appartenances.
+- `public` : l’application transmet uniquement l’en-tête `Host`, après le proxy
+  frontal qui conserve cet hôte. PostgreSQL compare le nom complet au
+  sous-domaine et au `DOMAINE_PUBLIC` installé par `npm run migrate`. Aucun
+  `X-Forwarded-Host`, corps ou paramètre ne choisit l’organisation. Ce contexte
+  atteste une origine publique, **pas une session ni une notification PSP**.
+- `systeme` : seul `app_worker` peut ouvrir le contexte d’une organisation
+  existante. L’ordonnanceur est responsable de l’origine du travail. Le détenteur
+  du mot de passe worker est donc dans cette frontière de confiance.
+
+`app_policy` (sans connexion) émet et vérifie une HMAC avec un secret aléatoire
+persisté dans `contexte_prive.configuration`, illisible et non modifiable par les
+rôles applicatifs. La preuve lie le PID PostgreSQL, l’identifiant de transaction,
+l’organisation, l’utilisateur et le mode. Changer un champ ou recopier la preuve
+après le commit invalide `app_contexte_verifie()`. Les fonctions internes ne sont
+pas exécutables par `PUBLIC`, `app_runtime`, `app_auth` ou `app_worker`.
+Le secret n’est ni un mot de passe de rôle ni une variable d’environnement.
+
+Les futures policies doivent combiner leur isolation de tenant et
+`app_contexte_verifie() is not null`, puis restreindre le mode selon l’opération
+(par exemple `= 'session'`). Une preuve publique ne doit jamais autoriser une
+écriture financière réservée à une session ou un worker. Les callbacks PSP
+(M6) devront vérifier la signature du prestataire avant de créer le travail
+système ; transmettre seulement un UUID d’organisation ne constitue pas une
+preuve PSP. Rien n’applique ces nouvelles policies aux tables administratives.
+
+Les services et les tâches doivent également appliquer K-2 dans la transaction
+avec `verifierSuspension` (application Ovation), indépendamment de la preuve.
+
+Dans l’API Ovation, `@Public()` désigne les routes métier liées à l’hôte ;
+`@PublicHandler()` reste utilisé pour les routes techniques sans organisation
+(authentification, santé et liens porteurs de leur propre preuve).
+`GET /api/public/organisation` expose seulement `nom`, `sousDomaine` et
+`langueDefaut`. `GET /api/public/codes/:code` expose `type` et
+`identifiantPublic`. La sonde `POST /api/public/demonstration` écrit uniquement
+une ligne technique sous la nouvelle policy vérifiée ; sa variante avec
+`/:evenementId` vérifie aussi la suspension de l’évènement.
+
+`PATCH /api/tenants/:id` accepte désormais `sousDomaine` (propriétaire seulement,
+audit avant/après) et `langueDefaut` (`fr` ou `en`). Le sous-domaine initial est
+un nom technique `org-…`, unique ; le propriétaire peut ensuite le personnaliser.
+`PATCH /api/me/langue` accepte `languePreferee` (`fr` ou `en`). La préférence du
+destinataire prime sur celle de l’organisation pour les notifications rendues.
+Ces ajouts ne changent pas les signatures ni le comportement historique du paquet.
+
+La preuve de session de l'application exige une **chaîne de confiance indépendante**
+des tables modifiables par `app_runtime` :
+
+1. **Racine administrative.** `npm --prefix apps/api run tenant:create` appelle
+   `creerTenantInitial` avec le compte des migrations et atteste le propriétaire
+   dans la même transaction. Ce worktree ne possède aucune route HTTP de création
+   d'organisation : `GET/PATCH /api/tenants/:id` lisent et modifient le profil.
+   Le trigger INVOKER reconnaît le propriétaire de la table privée ou un
+   superutilisateur, jamais `app_policy` par sa seule qualité de DEFINER.
+   Un fondateur en attente est lié à l'adresse attestée et au compte Better Auth
+   qui en a prouvé la possession.
+2. **Émission.** Le service d'invitations ouvre un contexte SQL `session` avec le
+   jeton issu de Better Auth. `app_attester_invitation(uuid)`, SECURITY DEFINER
+   détenue par `app_policy`, exige ce contexte signé, la même organisation et
+   l'émetteur attesté détenteur de `member.invite` sur la portée concernée. Elle
+   contrôle également les permissions déléguées et le cas propriétaire, puis
+   conserve dans `contexte_prive.invitation` l'empreinte SHA-256 du jeton,
+   l'e-mail, le rôle, la portée, l'émetteur et l'expiration (72 heures maximum).
+   L'attestation d'appartenance lie uniquement l'organisation, l'utilisateur et
+   son `auth_sub` (l'identifiant de ligne sert à la révocation par cascade).
+   Les rôles, portées et permissions sont évalués en direct. Une promotion,
+   rétrogradation ou modification de portée ne modifie pas cette attestation.
+3. **Acceptation.** `app_accepter_invitation(jeton text, session text)`, détenue par
+   `app_policy`, vérifie l'empreinte privée, l'expiration, les attributs immuables,
+   la session Better Auth non expirée et son e-mail vérifié correspondant. Elle
+   revérifie les droits de l'émetteur, conserve les contrôles métier et les
+   verrous de suspension, puis crée l'appartenance **et son attestation** dans
+   la même transaction. L'ancienne surcharge `(bytea, text, text)` est interne :
+   son exécution est retirée à `app_runtime`. Les routes HTTP et leurs DTO restent
+   identiques ; le service transmet désormais aussi le jeton de session.
+4. **Révocation.** Supprimer une appartenance ou son organisation supprime la
+   preuve par cascade. Les invitations révoquées
+   ou consommées restent marquées dans le registre privé ; réécrire les
+   indicateurs publics ne réactive pas un lien.
+5. **Rattrapage unique.** La migration additive `m0b-chaine-confiance`, exécutée
+   par le propriétaire des migrations, atteste **toutes les appartenances
+   existantes des organisations actuelles** lors de son premier passage. Cette
+   photographie administrative constitue la confiance initiale accordée aux
+   données historiques ; elle doit être déployée sur une base contrôlée.
+   Un marqueur privé transactionnel empêche tout nouveau rattrapage lors des
+   rejeux. Un marqueur distinct protège la reprise des invitations en attente
+   non expirées dans le registre privé ; leurs liens restent utilisables après
+   migration. Aucune insertion runtime ultérieure n'est certifiée par un rejeu.
+
+**Limite assumée de A-4.** Cette protection porte sur la frontière **entre
+organisations** face au détenteur du mot de passe `app_runtime`. Un détenteur
+qui est lui-même membre attesté d'une organisation peut modifier les rôles de
+sa propre organisation : ce risque intra-organisation est couvert par l'audit
+et reste hors de A-4. L'attestation ne constitue pas une photographie des droits.
+L'émission et l'acceptation à portée d'évènement refusent sa suspension et
+conservent un verrou sur cet évènement jusqu'au commit.
+
+Les fonctions de certification et d'acceptation ont un `search_path` fixé ;
+`app_runtime` ne peut ni lire ni écrire les registres privés. Le jeton de session
+n'est utilisé qu'en mémoire et comme paramètre SQL, jamais journalisé. Ce contrat
+SQL appartient à l'application Ovation ; l'API du paquet tenancy reste inchangée.
