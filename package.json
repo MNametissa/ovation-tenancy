@@ -1,6 +1,6 @@
 {
   "name": "@ovation/tenancy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Multitenant NestJS : tenants, rôles configurables, RLS PostgreSQL, journal d'audit.",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,7 +22,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "NODE_OPTIONS=--experimental-vm-modules npx --no-install jest",
-    "test:cov": "NODE_OPTIONS=--experimental-vm-modules npx --no-install jest --coverage"
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules npx --no-install jest --coverage",
+    "prepare": "npm run build"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0 || ^12.0.0",
@@ -52,5 +53,9 @@
   "dependencies": {
     "@casl/ability": "^7.0.1",
     "@nestjs-cls/transactional-adapter-kysely": "^2.0.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MNametissa/ovation-tenancy.git"
   }
 }

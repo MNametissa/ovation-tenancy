@@ -9,9 +9,13 @@ catalogue de permissions, ses rôles système et ses colonnes métier.
 Node.js 22 ou plus récent, PostgreSQL 17, NestJS 11 ou 12 et application ESM :
 
 ```sh
-npm install @ovation/tenancy @nestjs/common @nestjs/core reflect-metadata \
-  kysely pg nestjs-cls @nestjs-cls/transactional rxjs
+npm install github:MNametissa/ovation-tenancy#v0.3.0 @nestjs/common @nestjs/core \
+  reflect-metadata kysely pg nestjs-cls @nestjs-cls/transactional rxjs
 ```
+
+Le paquet n'est publié sur aucun registre : il s'installe depuis son dépôt
+(privé : accès Git requis), et `prepare` le construit à l'installation. Il
+s'importe sous son nom, `@ovation/tenancy`.
 
 `nestjs-cls` et `@nestjs-cls/transactional` sont des dépendances de pair : une seule
 instance de chaque bibliothèque doit fournir le CLS et les transactions de
